@@ -16,15 +16,15 @@ from WordLevelTokenizer import WordLevelTokenizer
 class LKeypointsTransformer(L.LightningModule):
 
     def __init__(
-            self, 
-            model: KeypointsTransformer, 
-            device: torch.device, 
-            tokenizer: WordLevelTokenizer, 
-            translator: Translator, 
-            lr: float,
-            sample_input: tuple[Tensor, Tensor, Tensor, Tensor],
-            class_weights: Tensor | None = None,
-        ):
+        self,
+        model: KeypointsTransformer,
+        device: torch.device,
+        tokenizer: WordLevelTokenizer,
+        translator: Translator,
+        lr: float,
+        sample_input: tuple[Tensor, Tensor, Tensor, Tensor],
+        class_weights: Tensor | None = None,
+    ):
         super().__init__()
         self.model = model
         self.loss_fn = cross_entropy
@@ -33,18 +33,23 @@ class LKeypointsTransformer(L.LightningModule):
         self.tokenizer = tokenizer
         self.translator = translator
         self.example_input_array = sample_input
-        self.accuracy = Accuracy(task="multiclass", num_classes=self.tokenizer.vocab_size, ignore_index=tokenizer.pad_token_id)
+        self.accuracy = Accuracy(
+            task="multiclass",
+            num_classes=self.tokenizer.vocab_size,
+            ignore_index=tokenizer.pad_token_id,
+        )
         self.class_weights = class_weights
         if self.class_weights is not None:
             self.class_weights = self.class_weights.to(self.running_device)
-        self.save_hyperparameters(ignore=['model'])
+        self.save_hyperparameters(ignore=["model"])
 
         self.ys_step: list[str] = []
         self.beam_translations_step: list[str] = []
         self.greedy_translations_step: list[str] = []
 
-
-    def forward(self, src: Tensor, tgt: Tensor, tgt_mask: Tensor, tgt_padding_mask: Tensor):
+    def forward(
+        self, src: Tensor, tgt: Tensor, tgt_mask: Tensor, tgt_padding_mask: Tensor
+    ):
         return self.model(src, tgt, tgt_mask, tgt_padding_mask)
 
     def configure_optimizers(self):
@@ -55,7 +60,9 @@ class LKeypointsTransformer(L.LightningModule):
         src, tgt = batch
         # tgt_input and tgt_ouptut are displaced by one position, so tgt_input[i] is the input to the model and tgt_output[i] is the expected output
         tgt_input = tgt[:, :-1]
-        tgt_mask, tgt_padding_mask = create_target_mask(tgt_input, self.tokenizer.pad_token_id, self.running_device)
+        tgt_mask, tgt_padding_mask = create_target_mask(
+            tgt_input, self.tokenizer.pad_token_id, self.running_device
+        )
         logits = self.model(src, tgt_input, tgt_mask, tgt_padding_mask)
         tgt_output = tgt[:, 1:]
         loss = self.loss_fn(
@@ -64,7 +71,9 @@ class LKeypointsTransformer(L.LightningModule):
             ignore_index=self.tokenizer.pad_token_id,
             weight=self.class_weights,
         )
-        accuracy = self.accuracy(logits.reshape(-1, logits.shape[-1]), tgt_output.reshape(-1))
+        accuracy = self.accuracy(
+            logits.reshape(-1, logits.shape[-1]), tgt_output.reshape(-1)
+        )
         return loss, accuracy
 
     def training_step(self, batch, batch_idx):
@@ -90,15 +99,34 @@ class LKeypointsTransformer(L.LightningModule):
         return loss, accuracy
 
     def on_test_epoch_end(self):
-        translation_results = [(y, trans_greedy, trans_beam) +
-         tuple(bleu_score(trans_greedy, [y], n_gram=n).item() for n in range(1, 5)) +
-         tuple(bleu_score(trans_beam, [y], n_gram=n).item() for n in range(1, 5))
-            for y, trans_greedy, trans_beam in zip(self.ys_step, self.greedy_translations_step, self.beam_translations_step)]
+        translation_results = [
+            (y, trans_greedy, trans_beam)
+            + tuple(bleu_score(trans_greedy, [y], n_gram=n).item() for n in range(1, 5))
+            + tuple(bleu_score(trans_beam, [y], n_gram=n).item() for n in range(1, 5))
+            for y, trans_greedy, trans_beam in zip(
+                self.ys_step, self.greedy_translations_step, self.beam_translations_step
+            )
+        ]
         self.ys_step = []
         self.greedy_translations_step = []
         self.beam_translations_step = []
-        translation_results_df = pd.DataFrame(translation_results, columns=["y", "trans_greedy", "trans_beam", "bleu_1_greedy", "bleu_2_greedy", "bleu_3_greedy", "bleu_4_greedy", "bleu_1_beam", "bleu_2_beam", "bleu_3_beam", "bleu_4_beam"])
-        self.logger.log_table(key="translation-results", columns=list(translation_results_df.columns), data=translation_results)
+        translation_results_df = pd.DataFrame(
+            translation_results,
+            columns=[
+                "y",
+                "trans_greedy",
+                "trans_beam",
+                "bleu_1_greedy",
+                "bleu_2_greedy",
+                "bleu_3_greedy",
+                "bleu_4_greedy",
+                "bleu_1_beam",
+                "bleu_2_beam",
+                "bleu_3_beam",
+                "bleu_4_beam",
+            ],
+        )
+        self.logger.log_table(key="translation-results", columns=list(translation_results_df.columns), data=translation_results)  # type: ignore
         self.log("bleu_1_greedy", translation_results_df["bleu_1_greedy"].mean())
         self.log("bleu_2_greedy", translation_results_df["bleu_2_greedy"].mean())
         self.log("bleu_3_greedy", translation_results_df["bleu_3_greedy"].mean())
@@ -107,9 +135,11 @@ class LKeypointsTransformer(L.LightningModule):
         self.log("bleu_2_beam", translation_results_df["bleu_2_beam"].mean())
         self.log("bleu_3_beam", translation_results_df["bleu_3_beam"].mean())
         self.log("bleu_4_beam", translation_results_df["bleu_4_beam"].mean())
-        translation_results_df.to_csv(f"translation-results-{self.logger.experiment.name}.csv", index=False)
+        translation_results_df.to_csv(f"translation-results-{self.logger.experiment.name}.csv", index=False)  # type: ignore
 
-    def get_translations(self, batch: Tensor, batch_idx: int) -> tuple[list[str], list[str], list[str]]:
+    def get_translations(
+        self, batch: Tensor, batch_idx: int
+    ) -> tuple[list[str], list[str], list[str]]:
         src, tgt = batch
         preds_greedy: list[str] = []
         preds_beam: list[str] = []
@@ -120,11 +150,11 @@ class LKeypointsTransformer(L.LightningModule):
             src_0 = src[i].unsqueeze(0)
             preds_greedy.append(self.translator.translate(src_0, method="greedy"))
             preds_beam.append(self.translator.translate(src_0, method="beam"))
-            ys.append(self.tokenizer.decode([int(x) for x in tgt[i].tolist()], skip_special_tokens=True, clean_up_tokenization_spaces=True))
+            ys.append(
+                self.tokenizer.decode(
+                    [int(x) for x in tgt[i].tolist()],
+                    skip_special_tokens=True,
+                    clean_up_tokenization_spaces=True,
+                )
+            )
         return ys, preds_greedy, preds_beam
-
-LR = 1e-3
-DEVICE = torch.device("mps" if torch.backends.mps.is_available() else ("cuda" if torch.cuda.is_available() else "cpu"))
-
-l_model = LKeypointsTransformer(model, tokenizer, Translator(model, tokenizer, MAX_TOKENS, self.running_device), DEVICE, LR)
-model_summary.summarize(l_model, max_depth=10)
