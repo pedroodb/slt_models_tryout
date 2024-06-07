@@ -89,6 +89,7 @@ class LKeypointsTransformer(L.LightningModule):
         return loss
 
     def test_step(self, batch, batch_idx):
+        self.model.eval()
         loss, accuracy = self.run_on_batch(batch)
         self.log("test_loss", loss)
         self.log("test_accuracy", accuracy)
@@ -135,7 +136,7 @@ class LKeypointsTransformer(L.LightningModule):
         self.log("bleu_2_beam", translation_results_df["bleu_2_beam"].mean())
         self.log("bleu_3_beam", translation_results_df["bleu_3_beam"].mean())
         self.log("bleu_4_beam", translation_results_df["bleu_4_beam"].mean())
-        translation_results_df.to_csv(f"translation-results-{self.logger.experiment.name}.csv", index=False)  # type: ignore
+        translation_results_df.to_csv(f"results/translation-results-{self.logger.experiment.name}.csv", index=False)  # type: ignore
 
     def get_translations(
         self, batch: Tensor, batch_idx: int
