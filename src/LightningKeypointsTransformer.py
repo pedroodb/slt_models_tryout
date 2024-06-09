@@ -41,7 +41,6 @@ class LKeypointsTransformer(L.LightningModule):
         self.class_weights = class_weights
         if self.class_weights is not None:
             self.class_weights = self.class_weights.to(self.running_device)
-        self.save_hyperparameters(ignore=["model"])
 
         self.ys_step: list[str] = []
         self.beam_translations_step: list[str] = []
@@ -142,15 +141,15 @@ class LKeypointsTransformer(L.LightningModule):
         self, batch: Tensor, batch_idx: int
     ) -> tuple[list[str], list[str], list[str]]:
         src, tgt = batch
-        preds_greedy: list[str] = []
-        preds_beam: list[str] = []
+        preds_greedy = self.translator.translate(
+            src, self.model, "greedy", self.tokenizer
+        )
+        preds_beam = self.translator.translate(
+            src, self.model, "beam", self.tokenizer, k=5
+        )
         ys: list[str] = []
         for i in range(len(src)):
-            # print(f"Batch {batch_idx}, sample {i}")
-            # adds extra dimension representing the batch
-            src_0 = src[i].unsqueeze(0)
-            preds_greedy.append(self.translator.translate(src_0, method="greedy"))
-            preds_beam.append(self.translator.translate(src_0, method="beam"))
+            src_0 = src[i]
             ys.append(
                 self.tokenizer.decode(
                     [int(x) for x in tgt[i].tolist()],

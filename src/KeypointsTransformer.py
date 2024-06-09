@@ -11,8 +11,6 @@ class Conv1DEmbedder(nn.Module):
     def __init__(self, in_channels: int, out_channels: int):
         super(Conv1DEmbedder, self).__init__()
         self.conv1d_1 = nn.Conv1d(in_channels, 128, 1)
-        # self.conv1d_2 = nn.Conv1d(512, 256, 1)
-        # self.conv1d_3 = nn.Conv1d(256, 128, 1)
         self.conv1d_4 = nn.Conv1d(128, out_channels, 1)
 
     def forward(self, x: Tensor) -> Tensor:
@@ -23,11 +21,7 @@ class Conv1DEmbedder(nn.Module):
                 (N, S, E) where E is the embedding size
         """
         x = x.permute(0, 2, 1)
-        # print("x1", x)
         x = relu(self.conv1d_1(x))
-        # print("x2", x)
-        # x = relu(self.conv1d_2(x))
-        # x = relu(self.conv1d_3(x))
         x = relu(self.conv1d_4(x))
         return x.permute(0, 2, 1)
 
@@ -136,7 +130,33 @@ class KeypointsTransformer(nn.Module):
         )
         self.generator = nn.Linear(d_model, tgt_vocab_size)
 
+    def embed_src(self, src: Tensor) -> Tensor:
+        """
+        Embed the source tensor.
+        Args:
+            src: (N, S, E)
+        Returns:
+            Tensor of shape (N, S, D_MODEL) representing the embedded source tensor
+        """
+        src = src.permute(0, 2, 1)
+        src = self.batch_norm(src)
+        src = src.permute(0, 2, 1)
+        src_emb: Tensor = self.src_keyp_emb(src)
+
+        assert (
+            src_emb.shape[-1] == self.transformer.d_model
+        ), f"Source embedding shape ({src_emb.shape[-1]}) should match {self.transformer.d_model} (D_MODEL)"
+        return src_emb
+
     def embed_tgt(self, tgt: Tensor, pad_idx: int = 0) -> Tensor:
+        """
+        Embed the target tensor.
+        Args:
+            tgt: (N, T)
+            pad_idx: padding index
+        Returns:
+            Tensor of shape (N, T, D_MODEL) representing the embedded target tensor
+        """
         if self.use_bert_embeddings:
             tgt_emb = self.tgt_tok_emb(
                 tgt, attention_mask=(tgt == pad_idx)
@@ -144,6 +164,10 @@ class KeypointsTransformer(nn.Module):
             tgt_emb = self.tgt_tok_conv_emb(tgt_emb)
         else:
             tgt_emb = self.tgt_tok_emb(tgt)
+
+        assert (
+            tgt_emb.shape[-1] == self.transformer.d_model
+        ), f"Target embedding shape ({tgt_emb.shape[-1]}) should match {self.transformer.d_model} (D_MODEL)"
         return tgt_emb
 
     def forward(
@@ -153,20 +177,15 @@ class KeypointsTransformer(nn.Module):
         Forward pass of the model.
         Args:
             src: (N, S, E)
-            tgt: (N, T, E)
+            tgt: (N, T)
             tgt_mask: (T, T)
             tgt_padding_mask: (N, T)
         Returns:
-            Tensor of shape (N, T, tgt_vocab_size)
+            Tensor of shape (N, T, tgt_vocab_size) representing the output of the model
         """
-        src = src.permute(0, 2, 1)
-        src = self.batch_norm(src)
-        src = src.permute(0, 2, 1)
-
-        src_emb = self.src_keyp_emb(src)
-        src_emb = self.src_pe(src_emb)
-
+        src_emb = self.embed_src(src)
         tgt_emb = self.embed_tgt(tgt)
+        src_emb = self.src_pe(src_emb)
         tgt_emb = self.tgt_pe(tgt_emb)
         # src_mask and src_key_padding_mask are set to none as we use the whole input at every timestep
         outs = self.transformer(
@@ -177,7 +196,6 @@ class KeypointsTransformer(nn.Module):
             src_key_padding_mask=None,
             tgt_key_padding_mask=tgt_padding_mask,
         )
-        # return softmax(self.generator(outs), dim=0)
         return self.generator(outs)
 
     def encode(self, src: Tensor) -> Tensor:
@@ -185,7 +203,7 @@ class KeypointsTransformer(nn.Module):
         Args:
             src: (N, S, E)
         Returns:
-            Tensor of shape (N, S, D_MODEL)
+            Tensor of shape (N, S, D_MODEL) representing the output of the encoder
         """
         src = src.permute(0, 2, 1)
         src = self.batch_norm(src)
@@ -198,20 +216,46 @@ class KeypointsTransformer(nn.Module):
         self,
         tgt: Tensor,
         memory: Tensor,
-        tgt_mask: Tensor,
+        tgt_mask: Optional[Tensor] = None,
         tgt_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
         """
         Args:
-            tgt: (N, T, E)
+            tgt: (N, T) integer tensor
             memory: (N, S, E)
             tgt_mask: (T, T)
         Returns:
-            Tensor of shape (N, T, D_MODEL)
+            Tensor of shape (N, T, D_MODEL) representing the output of the decoder
         """
-        tgt = tgt.to(torch.int64)
         tgt_emb = self.embed_tgt(tgt)
         tgt_emb = self.tgt_pe(tgt_emb)
         return self.transformer.decoder(
             tgt_emb, memory, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_padding_mask
         )
+
+    def predict_proba(
+        self,
+        tgt: Tensor,
+        src: Optional[Tensor] = None,
+        memory: Optional[Tensor] = None,
+    ) -> tuple[Tensor, Tensor]:
+        """
+        Args:
+            tgt: (N, T) integer tensor
+            src: Optional (N, S, E) shaped tensor
+            memory: Optional (N, S, D_MODEL) shaped tensor
+        Returns:
+            Tuple of two tensors:
+                - Tensor of shape (N, T, tgt_vocab_size) representing the output of the model as a probabilty distribution (after softmax)
+                - Tensor of shape (N, S, D_MODEL) representing the output of the encoder
+        Raises:
+            ValueError: if neither src nor memory is provided
+        """
+        if src is not None:
+            memory = self.encode(src)
+            out = self.decode(tgt, memory)
+        elif memory is not None:
+            out = self.decode(tgt, memory)
+        else:
+            raise ValueError("Either src or memory must be provided")
+        return (softmax(self.generator(out)[:, -1], dim=1), memory)

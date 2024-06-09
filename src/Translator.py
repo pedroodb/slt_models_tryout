@@ -1,93 +1,120 @@
-from typing import Literal
+from typing import Literal, Optional
+
 import torch
 from torch import Tensor
-from torch.nn.functional import softmax
 
 from WordLevelTokenizer import WordLevelTokenizer
 from KeypointsTransformer import KeypointsTransformer
-from helpers import generate_square_subsequent_mask
 
 
 class Translator:
-    # TODO: implement batch_greedy_decode and batch_beam_decode
-
     def __init__(
         self,
-        model: KeypointsTransformer,
-        tokenizer: WordLevelTokenizer,
-        max_tokens: int,
         device: torch.device,
+        max_tokens: int,
     ):
-        self.model = model
-        self.tokenizer = tokenizer
         self.device = device
         self.max_tokens = max_tokens
 
-    def translate(self, src, method: Literal["greedy", "beam"], k: int = 5) -> str:
-        self.model.eval()
+    def translate(
+        self,
+        src: Tensor,
+        model: KeypointsTransformer,
+        method: Literal["greedy", "beam"],
+        tokenizer: WordLevelTokenizer,
+        k: Optional[int] = 5,
+    ) -> list[str]:
+        """
+        Translate a batch of sequences using the specified method
+        Args:
+            src: (N, S) integer tensor
+            model: model to use for translation
+            method: decoding method, either "greedy" or "beam"
+            tokenizer: tokenizer to decode the output sequences
+            max_tokens: maximum number of tokens to generate
+            device: device to use for the model
+            k: beam size
+        Returns:
+            List of strings containing the translated sequences
+        """
+        model.eval()
         with torch.no_grad():
             if method == "greedy":
-                out = self.greedy_decode(src)
+                out = self.greedy_decode(
+                    src, model, tokenizer.cls_token_id, tokenizer.sep_token_id
+                )
             elif method == "beam":
-                out = self.beam_decode(src, k)
+                if k is None:
+                    raise ValueError(
+                        "Beam size must be specified when using beam search."
+                    )
+                out = self.beam_decode(
+                    src, model, k, tokenizer.cls_token_id, tokenizer.sep_token_id
+                )
             else:
                 raise ValueError("Invalid method. Choose between 'greedy' and 'beam'.")
-        return self.tokenizer.decode(
-            [int(x) for x in out.tolist()], skip_special_tokens=True
-        )
+        return [
+            tokenizer.decode(
+                [int(x) for x in out[i].tolist()], skip_special_tokens=True
+            )
+            for i in range(len(src))
+        ]
 
-    def greedy_decode(self, src: Tensor) -> Tensor:
-        memory = self.model.encode(src)
-        ys = torch.ones(1, 1).fill_(self.tokenizer.cls_token_id).to(self.device)
+    def greedy_decode(
+        self,
+        src: Tensor,
+        model: KeypointsTransformer,
+        bos: int,
+        eos: int,
+    ) -> Tensor:
+        """
+        Greedy decoding algorithm for batched inputs
+        Args:
+            src: (N, S) integer tensor
+            model: model to use for translation
+            bos: beginning of sentence token
+            eos: end of sentence token
+        Returns:
+            Tensor of shape (N, T) containing the output of the model until the end token or the maximum number of tokens is reached
+        """
+        ys = torch.full((src.size(0), 1), bos).to(self.device)
+        prob, memory = model.predict_proba(ys, src=src)
         for _ in range(self.max_tokens - 1):
-            tgt_mask = generate_square_subsequent_mask(
-                ys.size(1), self.device
-            )  # should work with zeros
-            out = self.model.decode(ys, memory, tgt_mask, None)
-            prob = self.model.generator(out)[:, -1]
-            _, next_word_tensor = torch.max(prob, dim=1)
-            next_word = next_word_tensor.item()
-            ys = torch.cat(
-                [ys, torch.ones(1, 1).type_as(src.data).fill_(next_word)], dim=1
+            _, next_word = torch.max(prob, dim=1)
+            # if the last word is the end token, keep it and do not predict the next word
+            next_word = torch.where(
+                ys[:, -1] == eos,
+                torch.full(next_word.shape, eos).to(self.device),
+                next_word,
             )
-            if next_word == self.tokenizer.sep_token_id:
+            next_word = next_word.unsqueeze(1)
+            ys = torch.cat([ys, next_word], dim=1)
+            if (next_word == eos).all():
                 break
-        return ys.squeeze()
+            prob, memory = model.predict_proba(ys, memory=memory)
+        return ys
 
-    def batched_greedy_decode(self, src: Tensor) -> Tensor:
-        self.model.eval()
-        memory = self.model.encode(src)
-        ys = torch.ones(1, 1).fill_(self.tokenizer.cls_token_id).to(self.device)
-        for i in range(self.max_tokens - 1):
-            tgt_mask = generate_square_subsequent_mask(ys.size(1), self.device)
-            tgt_padding_mask = ys == self.tokenizer.pad_token_id
-            out = self.model.decode(ys, memory, tgt_mask, tgt_padding_mask)
-            prob = self.model.generator(out)[:, -1]
-            _, next_word_tensor = torch.max(prob, dim=1)
-            next_word = next_word_tensor.item()
-            ys = torch.cat(
-                [ys, torch.ones(1, 1).type_as(src.data).fill_(next_word)], dim=1
-            )
-            if next_word == self.tokenizer.sep_token_id:
-                break
-        return ys.squeeze()
-
-    def beam_decode(self, src: Tensor, k: int) -> Tensor:
+    def single_beam_decode(
+        self, src: Tensor, model: KeypointsTransformer, k: int, bos: int, eos: int
+    ) -> Tensor:
+        """
+        Beam search decoding algorithm for a single sample
+        Args:
+            src: (S) integer tensor
+            model: model to use for translation
+            k: beam size
+        Returns:
+            Tensor of shape (T) containing the output of the model until the end token or the maximum number of tokens is reached
+        """
         # first dimension corresponding to the batch will be used to predict over the k posible beams
-        memory = self.model.encode(src).repeat(k, 1, 1)
+        src = src.repeat(k, 1, 1)
         # ys is a Tensor of shape (k, T), initialized with the start token and beams_probs is a Tensor of shape (k) with the probabilities of each beam
-        ys = torch.ones(k, 1).fill_(self.tokenizer.cls_token_id).to(self.device)
+        ys = torch.full((k, 1), bos).to(self.device)
         beams_probs = torch.ones(k).to(self.device)
 
-        for _ in range(self.max_tokens - 1):
-            tgt_mask = torch.zeros(ys.size(1), ys.size(1)).to(self.device)
-            next_word_probs = softmax(
-                self.model.generator(self.model.decode(ys, memory, tgt_mask, None))[
-                    :, -1
-                ],
-                dim=1,
-            )
+        next_word_probs, memory = model.predict_proba(ys, src=src)
 
+        for _ in range(self.max_tokens - 1):
             # repeat the possible ys and the probabilities k times to later generate k combinations for each beam
             # repeated_ys is a Tensor of shape (k*k, T), repeated_beams_probs is a Tensor of shape (k*k)
             repeated_ys = ys.repeat_interleave(k, dim=0)
@@ -101,13 +128,13 @@ class Translator:
 
             # if any possible y is the end token, change the following token by another end token and keep the original probabilties
             next_words_probs = torch.where(
-                repeated_ys[:, -1] == self.tokenizer.sep_token_id,
+                repeated_ys[:, -1] == eos,
                 torch.ones_like(next_words_probs),
                 next_words_probs,
             )
             next_words = torch.where(
-                repeated_ys[:, -1] == self.tokenizer.sep_token_id,
-                torch.ones_like(next_words) * self.tokenizer.sep_token_id,
+                repeated_ys[:, -1] == eos,
+                torch.full_like(next_words, eos),
                 next_words,
             )
             # next_possible_ys is a Tensor of shape (k*k, T+1) with the next possible sequences and next_beam_probs is a Tensor of shape (k*k) with the probabilities for each sequence
@@ -125,6 +152,32 @@ class Translator:
             beams_probs = torch.index_select(next_beam_probs, 0, sorted_indices)[:k]
             ys = torch.index_select(next_possible_ys, 0, sorted_indices)[:k]
 
-            if (ys[:, -1] == self.tokenizer.sep_token_id).all():
+            if (ys[:, -1] == eos).all():
                 break
+
+            next_word_probs, memory = model.predict_proba(ys, memory=memory)
         return ys[0].squeeze()
+
+    def beam_decode(
+        self, src: Tensor, model: KeypointsTransformer, k: int, bos: int, eos: int
+    ) -> Tensor:
+        """
+        Beam search decoding algorithm for batched inputs
+        Args:
+            src: (N, S) integer tensor
+            model: model to use for translation
+            k: beam size
+        Returns:
+            Tensor of shape (N, T) containing the output of the model until the end token or the maximum number of tokens is reached
+        """
+        # TODO: rewrite this function to do the beam search matrix-wise
+        preds_beam = []
+        for i in range(len(src)):
+            src_0 = src[i]
+            preds_beam.append(self.single_beam_decode(src_0, model, k, bos, eos))
+        max_length = max(tensor.size(0) for tensor in preds_beam)
+        padded_tensors = [
+            torch.nn.functional.pad(tensor, (0, max_length - tensor.size(0)))
+            for tensor in preds_beam
+        ]
+        return torch.stack(padded_tensors)
