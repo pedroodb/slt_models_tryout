@@ -20,6 +20,10 @@ class Conv1DEmbedder(nn.Module):
         Returns:
                 (N, S, E) where E is the embedding size
         """
+        assert (
+            x.dim() == 3
+        ), f"Input tensor should have 3 dimensions (N, S, E), got {x.dim()}"
+
         x = x.permute(0, 2, 1)
         x = relu(self.conv1d_1(x))
         x = relu(self.conv1d_4(x))
@@ -49,6 +53,10 @@ class PositionalEncoding(nn.Module):
         Returns:
             Tensor of shape (N, S, E)
         """
+        assert (
+            x.dim() == 3
+        ), f"Input tensor should have 3 dimensions (N, S, E), got {x.dim()}"
+
         x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 
@@ -69,6 +77,10 @@ class TokenEmbedding(nn.Module):
         Returns:
             Tensor of shape (N, T, E)
         """
+        assert (
+            tokens.dim() == 2
+        ), f"Input tensor should have 2 dimensions (N, T), got {tokens.dim()}"
+
         return self.embedding(tokens.long()) * math.sqrt(self.emb_size)
 
 
@@ -106,7 +118,7 @@ class KeypointsTransformer(nn.Module):
         """
         super(KeypointsTransformer, self).__init__()
 
-        self.batch_norm = nn.BatchNorm1d(in_features)
+        # self.batch_norm = nn.BatchNorm1d(in_features)
         self.src_keyp_emb = Conv1DEmbedder(
             in_channels=in_features, out_channels=d_model
         )
@@ -138,9 +150,6 @@ class KeypointsTransformer(nn.Module):
         Returns:
             Tensor of shape (N, S, D_MODEL) representing the embedded source tensor
         """
-        src = src.permute(0, 2, 1)
-        src = self.batch_norm(src)
-        src = src.permute(0, 2, 1)
         src_emb: Tensor = self.src_keyp_emb(src)
 
         assert (
@@ -183,6 +192,32 @@ class KeypointsTransformer(nn.Module):
         Returns:
             Tensor of shape (N, T, tgt_vocab_size) representing the output of the model
         """
+        assert (
+            src.dim() == 3
+        ), f"Source tensor should have 3 dimensions, got {src.dim()}"
+        assert (
+            tgt.dim() == 2
+        ), f"Target tensor should have 2 dimensions, got {tgt.dim()}"
+        assert (
+            tgt_mask.dim() == 2
+        ), f"Target mask should have 2 dimensions, got {tgt_mask.dim()}"
+        assert (
+            tgt_padding_mask.dim() == 2
+        ), f"Target padding mask should have 2 dimensions, got {tgt_padding_mask.dim()}"
+        assert (
+            len(
+                set(
+                    [
+                        tgt.size(1),
+                        tgt_mask.size(0),
+                        tgt_mask.size(1),
+                        tgt_padding_mask.size(1),
+                    ]
+                )
+            )
+            == 1
+        ), f"Target dimensions mismatch: {tgt.size(1)=}, {tgt_mask.size()=}, {tgt_padding_mask.size()=}"
+
         src_emb = self.embed_src(src)
         tgt_emb = self.embed_tgt(tgt)
         src_emb = self.src_pe(src_emb)
@@ -205,9 +240,10 @@ class KeypointsTransformer(nn.Module):
         Returns:
             Tensor of shape (N, S, D_MODEL) representing the output of the encoder
         """
-        src = src.permute(0, 2, 1)
-        src = self.batch_norm(src)
-        src = src.permute(0, 2, 1)
+        assert (
+            src.dim() == 3
+        ), f"Source tensor should have 3 dimensions, got {src.dim()}"
+
         src_emb = self.src_keyp_emb(src)
         src_emb = self.src_pe(src_emb)
         return self.transformer.encoder(src_emb, None)
@@ -227,6 +263,10 @@ class KeypointsTransformer(nn.Module):
         Returns:
             Tensor of shape (N, T, D_MODEL) representing the output of the decoder
         """
+        assert (
+            tgt.dim() == 2
+        ), f"Target tensor should have 2 dimensions, got {tgt.dim()}"
+
         tgt_emb = self.embed_tgt(tgt)
         tgt_emb = self.tgt_pe(tgt_emb)
         return self.transformer.decoder(
@@ -251,6 +291,16 @@ class KeypointsTransformer(nn.Module):
         Raises:
             ValueError: if neither src nor memory is provided
         """
+        assert (
+            tgt.dim() == 2
+        ), f"Target tensor should have 2 dimensions, got {tgt.dim()}"
+        assert (
+            src is None or src.dim() == 3
+        ), f"Source tensor should have 3 dimensions, got {src.dim() if src is not None else None}"
+        assert (
+            memory is None or memory.dim() == 3
+        ), f"Memory tensor should have 3 dimensions, got {memory.dim() if memory is not None else None}"
+
         if src is not None:
             memory = self.encode(src)
             out = self.decode(tgt, memory)

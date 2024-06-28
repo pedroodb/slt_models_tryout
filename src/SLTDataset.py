@@ -1,15 +1,17 @@
 import os, json
 
-from typing import Literal, Optional, TypedDict, Callable
+from typing import Literal, Optional, TypedDict, Any, Callable
 
 import pandas as pd
-import numpy as np
 from tqdm import tqdm
 import torch
 from torch import Tensor
 from torch.utils.data import Dataset
+from torchvision.transforms.v2 import Compose
 
-# patch numpy types for skvideo: https://github.com/scikit-video/scikit-video/issues/154#issuecomment-1445239790
+from posecraft.Pose import Pose
+
+# patch numpy types to solve skvideo issue: https://github.com/scikit-video/scikit-video/issues/154#issuecomment-1445239790
 import numpy
 
 numpy.float = numpy.float64  # type: ignore
@@ -41,13 +43,15 @@ class SLTDataset(Dataset):
         input_mode: InputType,
         output_mode: OutputType,
         split: Optional[Literal["train", "val", "test"]] = None,
-        transforms: list[Callable[[Tensor], Tensor]] = [],
+        transforms: Optional[Compose] = None,
+        output_transforms: Optional[Callable] = None,
     ):
         self.data_dir = data_dir
         self.input_mode = input_mode
         self.output_mode = output_mode
         self.split = split
         self.transforms = transforms
+        self.output_transforms = output_transforms
 
         try:
             self.metadata: Metadata = json.load(
@@ -96,7 +100,7 @@ class SLTDataset(Dataset):
     def get_pose(self, idx: int) -> Tensor:
         id = self.annotations.iloc[idx]["id"]
         file_path = os.path.join(self.data_dir, "poses", f"{id}.npy")
-        return torch.from_numpy(np.load(file_path)).float()
+        return Pose.load_to_tensor(file_path)
 
     def get_video(self, idx: int) -> Tensor:
         id = self.annotations.iloc[idx]["id"]
@@ -110,12 +114,7 @@ class SLTDataset(Dataset):
     def get_gloss(self, idx: int) -> str:
         return self.annotations.iloc[idx]["gloss"]
 
-    def apply_transforms(self, x_data: Tensor) -> Tensor:
-        for transform in self.transforms:
-            x_data = transform(x_data)
-        return x_data
-
-    def __getitem__(self, idx: int) -> tuple[Tensor, str]:
+    def get_item_raw(self, idx: int) -> tuple[Tensor, str]:
         if self.input_mode == "pose":
             x_data = self.get_pose(idx)
         elif self.input_mode == "video":
@@ -124,7 +123,15 @@ class SLTDataset(Dataset):
             y_data = self.get_text(idx)
         elif self.output_mode == "gloss":
             y_data = self.get_gloss(idx)
-        return self.apply_transforms(x_data), y_data
+        return x_data, y_data
+
+    def __getitem__(self, idx: int) -> tuple[Tensor, Any]:
+        x_data, y_data = self.get_item_raw(idx)
+        if self.transforms:
+            x_data = self.transforms(x_data)
+        if self.output_transforms:
+            y_data = self.output_transforms(y_data)
+        return x_data, y_data
 
     def visualize_pose(
         self,
@@ -133,40 +140,18 @@ class SLTDataset(Dataset):
         h: Optional[int] = None,
         w: Optional[int] = None,
         size=1,
-        transforms: list[Callable[[Tensor], Tensor]] = [],
+        transforms: Optional[Compose] = None,
         out_path: Optional[str] = None,
     ):
-        pose = self.get_pose(idx)
-        for transform in transforms:
-            pose = transform(pose)
-        if use_video:
-            video = self.get_video(idx)
-            h, w, _ = video[0].shape
-        elif h is not None and w is not None:
-            video = torch.zeros((len(pose), h, w, 3))
-        else:
-            raise ValueError("Either use_video or specify h and w")
-        frames = []
-        for frame_idx, original_frame in enumerate(video):
-            frame = original_frame.detach().clone()
-            for person in pose[frame_idx]:
-                for keypoint in person:
-                    x = keypoint[0]
-                    y = keypoint[1]
-                    if not torch.isnan(x) and not torch.isnan(y):
-                        x = x * w
-                        y = y * h
-                        frame[
-                            int(y) - size : int(y) + size :,
-                            int(x) - size : int(x) + size,
-                        ] = (
-                            255
-                            - frame[
-                                int(y) - size : int(y) + size :,
-                                int(x) - size : int(x) + size,
-                            ]
-                        )
-                frames.append(frame)
+        pose = Pose(
+            pose=transforms(self.get_pose(idx)) if transforms else self.get_pose(idx)
+        )
+        video = pose.generate_video(
+            video=self.get_video(idx) if use_video else None,
+            h=h,
+            w=w,
+            size=size,
+        )
         if out_path is not None:
-            vwrite(out_path, frames)
-        return frames
+            vwrite(out_path, video)
+        return video
