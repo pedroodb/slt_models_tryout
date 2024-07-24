@@ -22,7 +22,7 @@ class Translator:
         model: KeypointsTransformer,
         method: Literal["greedy", "beam"],
         tokenizer: WordLevelTokenizer,
-        k: Optional[int] = 5,
+        k: Optional[int] = 32,
     ) -> list[str]:
         """
         Translate a batch of sequences using the specified method

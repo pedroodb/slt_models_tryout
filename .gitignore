@@ -8,3 +8,5 @@ __pycache__/
 visualizations/
 checkpoints/
 results/
+*.mp4
+dataset_formatting

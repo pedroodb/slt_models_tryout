@@ -3,10 +3,12 @@ import torch
 from typing import Optional
 from torch import Tensor, nn
 from torch.nn.functional import relu, softmax
-from transformers import AutoModel  # type: ignore
 
 
 class Conv1DEmbedder(nn.Module):
+    """
+    Apply 1D Convolutional layer to embed the keypoints to fit the input shape of the transformer.
+    """
 
     def __init__(self, in_channels: int, out_channels: int):
         super(Conv1DEmbedder, self).__init__()
@@ -16,14 +18,10 @@ class Conv1DEmbedder(nn.Module):
     def forward(self, x: Tensor) -> Tensor:
         """
         Args:
-                x: (N, S, E) where N is the batch size, S is the sequence length and E is the embedding size
+                x: Tensor of shape (N, S, E)
         Returns:
-                (N, S, E) where E is the embedding size
+                Tensor of shape (N, S, H), where the last dimension is the output of the convolutional layer to be used as input for the transformer.
         """
-        assert (
-            x.dim() == 3
-        ), f"Input tensor should have 3 dimensions (N, S, E), got {x.dim()}"
-
         x = x.permute(0, 2, 1)
         x = relu(self.conv1d_1(x))
         x = relu(self.conv1d_4(x))
@@ -31,6 +29,7 @@ class Conv1DEmbedder(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
+    """Code taken from https://pytorch.org/tutorials/beginner/translation_transformer.html"""
 
     def __init__(self, d_model: int, dropout: float = 0.1, max_len: int = 5000):
         super().__init__()
@@ -49,14 +48,10 @@ class PositionalEncoding(nn.Module):
         """
         Apply positional encoding to the input tensor.
         Args:
-            x: (N, S, E)
+            x: Tensor of shape (N, S, E)
         Returns:
-            Tensor of shape (N, S, E)
+            Tensor of shape (N, S, E) where the positional encoding has been added to the input tensor.
         """
-        assert (
-            x.dim() == 3
-        ), f"Input tensor should have 3 dimensions (N, S, E), got {x.dim()}"
-
         x = x + self.pe[:, : x.size(1)]
         return self.dropout(x)
 
@@ -73,38 +68,33 @@ class TokenEmbedding(nn.Module):
         """
         Applies token embedding to the target tensor.
         Args:
-            tokens: (N, T)
+            tokens: Tensor of shape (N, T)
         Returns:
-            Tensor of shape (N, T, E)
+            Tensor of shape (N, T, H) after applying the embedding to the input tensor.
         """
-        assert (
-            tokens.dim() == 2
-        ), f"Input tensor should have 2 dimensions (N, T), got {tokens.dim()}"
-
         return self.embedding(tokens.long()) * math.sqrt(self.emb_size)
 
 
 class KeypointsTransformer(nn.Module):
     """
     Transformer model for sign language translation. It uses a 1D convolutional layer to embed the keypoints and a transformer to translate the sequence.
-    - S refers to the source sequence length.
-    - T to the target sequence length.
+    - S refers to the source sequence length (src_len).
+    - T to the target sequence length (tgt_len).
+    - E is the source feature amount (in_features).
     - N to the batch size.
-    - E is the features number.
+    - H to the size of the dimension of the transformer embeddings (d_model).
     """
 
     def __init__(
         self,
-        src_max_len: int,
-        tgt_max_len: int,
+        src_len: int,
+        tgt_len: int,
         in_features: int,
         tgt_vocab_size: int,
         d_model: int = 64,
         num_encoder_layers: int = 6,
         num_decoder_layers: int = 6,
         dropout: float = 0.1,
-        use_bert_embeddings=False,
-        text_model: str | None = None,
     ):
         """
         Args:
@@ -113,26 +103,18 @@ class KeypointsTransformer(nn.Module):
             in_features: number of features of the input (amount of keypoints * amount of coordinates)
             tgt_vocab_size: size of the target vocabulary
             d_model: number of dimensions of the encoding vectors (default=64). Must be even so the positional encoding works.
-            kernel_size: the size of the 1D convolution window (default=5)
-            keys_initial_emb_size: the size of the keys embedding (default=128)
+            num_encoder_layers: number of encoder layers (default=6)
+            num_decoder_layers: number of decoder layers (default=6)
+            dropout: dropout rate (default=0.1)
         """
         super(KeypointsTransformer, self).__init__()
 
-        # self.batch_norm = nn.BatchNorm1d(in_features)
         self.src_keyp_emb = Conv1DEmbedder(
             in_channels=in_features, out_channels=d_model
         )
-        self.src_pe = PositionalEncoding(d_model=d_model, max_len=src_max_len)
-        self.use_bert_embeddings = use_bert_embeddings
-        if self.use_bert_embeddings and text_model is not None:
-            self.tgt_tok_emb = AutoModel.from_pretrained(text_model)
-            self.tgt_tok_emb.requires_grad_(False)
-            self.tgt_tok_conv_emb = Conv1DEmbedder(
-                in_channels=768, out_channels=d_model
-            )
-        else:
-            self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, d_model)
-        self.tgt_pe = PositionalEncoding(d_model=d_model, max_len=tgt_max_len)
+        self.src_pe = PositionalEncoding(d_model=d_model, max_len=src_len)
+        self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, d_model)
+        self.tgt_pe = PositionalEncoding(d_model=d_model, max_len=tgt_len)
         self.transformer = nn.Transformer(
             d_model=d_model,
             num_encoder_layers=num_encoder_layers,
@@ -140,43 +122,39 @@ class KeypointsTransformer(nn.Module):
             dropout=dropout,
             batch_first=True,
         )
-        self.generator = nn.Linear(d_model, tgt_vocab_size)
+        self.classifier = nn.Linear(d_model, tgt_vocab_size)
 
     def embed_src(self, src: Tensor) -> Tensor:
         """
         Embed the source tensor.
         Args:
-            src: (N, S, E)
+            src: Tensor of shape (N, S, E)
         Returns:
-            Tensor of shape (N, S, D_MODEL) representing the embedded source tensor
+            Tensor of shape (N, S, H) representing the embedded source tensor
         """
         src_emb: Tensor = self.src_keyp_emb(src)
 
         assert (
             src_emb.shape[-1] == self.transformer.d_model
-        ), f"Source embedding shape ({src_emb.shape[-1]}) should match {self.transformer.d_model} (D_MODEL)"
+        ), f"Source embedding shape ({src_emb.shape[-1]}) should match {self.transformer.d_model} (H)"
         return src_emb
 
-    def embed_tgt(self, tgt: Tensor, pad_idx: int = 0) -> Tensor:
+    def embed_tgt(
+        self,
+        tgt: Tensor,
+    ) -> Tensor:
         """
         Embed the target tensor.
         Args:
-            tgt: (N, T)
-            pad_idx: padding index
+            tgt: Tensor of shape (N, T)
         Returns:
-            Tensor of shape (N, T, D_MODEL) representing the embedded target tensor
+            Tensor of shape (N, T, H) representing the embedded target tensor
         """
-        if self.use_bert_embeddings:
-            tgt_emb = self.tgt_tok_emb(
-                tgt, attention_mask=(tgt == pad_idx)
-            ).last_hidden_state
-            tgt_emb = self.tgt_tok_conv_emb(tgt_emb)
-        else:
-            tgt_emb = self.tgt_tok_emb(tgt)
+        tgt_emb = self.tgt_tok_emb(tgt)
 
         assert (
             tgt_emb.shape[-1] == self.transformer.d_model
-        ), f"Target embedding shape ({tgt_emb.shape[-1]}) should match {self.transformer.d_model} (D_MODEL)"
+        ), f"Target embedding shape ({tgt_emb.shape[-1]}) should match {self.transformer.d_model} (H)"
         return tgt_emb
 
     def forward(
@@ -185,10 +163,10 @@ class KeypointsTransformer(nn.Module):
         """
         Forward pass of the model.
         Args:
-            src: (N, S, E)
-            tgt: (N, T)
-            tgt_mask: (T, T)
-            tgt_padding_mask: (N, T)
+            src: Tensor of shape (N, S, E)
+            tgt: Tensor of shape (N, T)
+            tgt_mask: Tensor of shape (T, T)
+            tgt_padding_mask: Tensor of shape (N, T)
         Returns:
             Tensor of shape (N, T, tgt_vocab_size) representing the output of the model
         """
@@ -231,22 +209,22 @@ class KeypointsTransformer(nn.Module):
             src_key_padding_mask=None,
             tgt_key_padding_mask=tgt_padding_mask,
         )
-        return self.generator(outs)
+        return self.classifier(outs)
 
     def encode(self, src: Tensor) -> Tensor:
         """
         Args:
-            src: (N, S, E)
+            src: Tensor of shape (N, S, E)
         Returns:
-            Tensor of shape (N, S, D_MODEL) representing the output of the encoder
+            Tensor of shape (N, S, H) representing the output of the encoder
         """
         assert (
             src.dim() == 3
         ), f"Source tensor should have 3 dimensions, got {src.dim()}"
 
-        src_emb = self.src_keyp_emb(src)
+        src_emb = self.embed_src(src)
         src_emb = self.src_pe(src_emb)
-        return self.transformer.encoder(src_emb, None)
+        return self.transformer.encoder(src_emb)
 
     def decode(
         self,
@@ -257,20 +235,22 @@ class KeypointsTransformer(nn.Module):
     ) -> Tensor:
         """
         Args:
-            tgt: (N, T) integer tensor
-            memory: (N, S, E)
-            tgt_mask: (T, T)
+            tgt: Integer tensor of shape (N, T)
+            memory: Tensor of shape (N, S, H) resulting from the encoder
+            tgt_mask: (T, T) mask
         Returns:
-            Tensor of shape (N, T, D_MODEL) representing the output of the decoder
+            Tensor of shape (N, T, H) representing the output of the decoder
         """
         assert (
             tgt.dim() == 2
         ), f"Target tensor should have 2 dimensions, got {tgt.dim()}"
-
         tgt_emb = self.embed_tgt(tgt)
         tgt_emb = self.tgt_pe(tgt_emb)
         return self.transformer.decoder(
-            tgt_emb, memory, tgt_mask=tgt_mask, tgt_key_padding_mask=tgt_padding_mask
+            tgt=tgt_emb,
+            memory=memory,
+            tgt_mask=tgt_mask,
+            tgt_key_padding_mask=tgt_padding_mask,
         )
 
     def predict_proba(
@@ -281,13 +261,13 @@ class KeypointsTransformer(nn.Module):
     ) -> tuple[Tensor, Tensor]:
         """
         Args:
-            tgt: (N, T) integer tensor
+            tgt: Integer tensor of shape (N, T)
             src: Optional (N, S, E) shaped tensor
-            memory: Optional (N, S, D_MODEL) shaped tensor
+            memory: Optional (N, S, H) shaped tensor. If provided, src is ignored
         Returns:
             Tuple of two tensors:
                 - Tensor of shape (N, T, tgt_vocab_size) representing the output of the model as a probabilty distribution (after softmax)
-                - Tensor of shape (N, S, D_MODEL) representing the output of the encoder
+                - Tensor of shape (N, S, H) representing the output of the encoder
         Raises:
             ValueError: if neither src nor memory is provided
         """
@@ -301,11 +281,11 @@ class KeypointsTransformer(nn.Module):
             memory is None or memory.dim() == 3
         ), f"Memory tensor should have 3 dimensions, got {memory.dim() if memory is not None else None}"
 
-        if src is not None:
-            memory = self.encode(src)
+        if memory is not None:
             out = self.decode(tgt, memory)
-        elif memory is not None:
+        elif src is not None:
+            memory = self.encode(src)
             out = self.decode(tgt, memory)
         else:
             raise ValueError("Either src or memory must be provided")
-        return (softmax(self.generator(out)[:, -1], dim=1), memory)
+        return (softmax(self.classifier(out)[:, -1], dim=1), memory)

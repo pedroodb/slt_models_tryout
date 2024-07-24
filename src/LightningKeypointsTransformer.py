@@ -145,7 +145,7 @@ class LKeypointsTransformer(L.LightningModule):
             src, self.model, "greedy", self.tokenizer
         )
         preds_beam = self.translator.translate(
-            src, self.model, "beam", self.tokenizer, k=5
+            src, self.model, "beam", self.tokenizer, k=32
         )
         ys: list[str] = []
         for i in range(len(src)):

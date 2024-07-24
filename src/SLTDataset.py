@@ -90,6 +90,10 @@ class SLTDataset(Dataset):
                 f"Missing {len(self.missing_files)} files out of {len(self.annotations)} ({round(100 * len(self.missing_files) / len(self.annotations), 2)}%)"
                 + (f" from split {split}" if split is not None else "")
             )
+            # remove missing files
+            self.annotations = self.annotations[
+                ~self.annotations["id"].isin(self.missing_files)
+            ]
         else:
             print("Dataset loaded correctly")
         print()
