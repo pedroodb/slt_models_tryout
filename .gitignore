@@ -9,4 +9,5 @@ visualizations/
 checkpoints/
 results/
 *.mp4
+.temp
 dataset_formatting

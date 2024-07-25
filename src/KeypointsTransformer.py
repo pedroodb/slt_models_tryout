@@ -1,8 +1,11 @@
 import math
+
 import torch
 from typing import Optional
 from torch import Tensor, nn
 from torch.nn.functional import relu, softmax
+
+from interp.InterpTransformer import InterpTransformer
 
 
 class Conv1DEmbedder(nn.Module):
@@ -95,6 +98,7 @@ class KeypointsTransformer(nn.Module):
         num_encoder_layers: int = 6,
         num_decoder_layers: int = 6,
         dropout: float = 0.1,
+        interp: bool = False,
     ):
         """
         Args:
@@ -115,14 +119,23 @@ class KeypointsTransformer(nn.Module):
         self.src_pe = PositionalEncoding(d_model=d_model, max_len=src_len)
         self.tgt_tok_emb = TokenEmbedding(tgt_vocab_size, d_model)
         self.tgt_pe = PositionalEncoding(d_model=d_model, max_len=tgt_len)
-        self.transformer = nn.Transformer(
-            d_model=d_model,
-            num_encoder_layers=num_encoder_layers,
-            num_decoder_layers=num_decoder_layers,
-            dropout=dropout,
-            batch_first=True,
-        )
-        self.classifier = nn.Linear(d_model, tgt_vocab_size)
+        if not interp:
+            self.transformer = nn.Transformer(
+                d_model=d_model,
+                num_encoder_layers=num_encoder_layers,
+                num_decoder_layers=num_decoder_layers,
+                dropout=dropout,
+                batch_first=True,
+            )
+        else:
+            self.transformer = InterpTransformer(
+                d_model=d_model,
+                num_encoder_layers=num_encoder_layers,
+                num_decoder_layers=num_decoder_layers,
+                dropout=dropout,
+                batch_first=True,
+            )
+        self.generator = nn.Linear(d_model, tgt_vocab_size)
 
     def embed_src(self, src: Tensor) -> Tensor:
         """
@@ -209,7 +222,7 @@ class KeypointsTransformer(nn.Module):
             src_key_padding_mask=None,
             tgt_key_padding_mask=tgt_padding_mask,
         )
-        return self.classifier(outs)
+        return self.generator(outs)
 
     def encode(self, src: Tensor) -> Tensor:
         """
@@ -288,4 +301,4 @@ class KeypointsTransformer(nn.Module):
             out = self.decode(tgt, memory)
         else:
             raise ValueError("Either src or memory must be provided")
-        return (softmax(self.classifier(out)[:, -1], dim=1), memory)
+        return (softmax(self.generator(out)[:, -1], dim=1), memory)
