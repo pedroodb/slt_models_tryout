@@ -27,6 +27,9 @@ class CenterToKeypoint(torch.nn.Module):
         zero_keypoint = pose[:, :, self.center_keypoint, :].unsqueeze(2)
         return pose + 0.5 - zero_keypoint
 
+    def __str__(self):
+        return "CenterToKeypoint"
+
 
 class NormalizeDistances(torch.nn.Module):
     def __init__(
@@ -58,6 +61,9 @@ class NormalizeDistances(torch.nn.Module):
         normalized_tensor[:, :, :, 0] = x1 - factor * (x1 - pose[:, :, :, 0])
         normalized_tensor[:, :, :, 1] = y1 - factor * (y1 - pose[:, :, :, 1])
         return normalized_tensor
+
+    def __str__(self):
+        return "NormalizeDistances"
 
 
 class FillMissing(torch.nn.Module):
@@ -94,6 +100,9 @@ class FillMissing(torch.nn.Module):
         )
         return tensor
 
+    def __str__(self):
+        return "FillMissing"
+
 
 class InterpolateFrames(torch.nn.Module):
     def __init__(self, max_frames: int, mode: str = "linear"):
@@ -122,6 +131,9 @@ class InterpolateFrames(torch.nn.Module):
         return tensor.reshape(people, keypoints, dimensions, self.max_frames).permute(
             3, 0, 1, 2
         )
+
+    def __str__(self):
+        return "InterpolateFrames"
 
 
 class NormalizeFramesSpeed(torch.nn.Module):
@@ -202,6 +214,9 @@ class NormalizeFramesSpeed(torch.nn.Module):
 
         return torch.stack(normalized_tensor)
 
+    def __str__(self):
+        return "NormalizeFramesSpeed"
+
 
 class FilterLandmarks(torch.nn.Module):
     def __init__(self, mask: Tensor, use_3d: bool = False):
@@ -229,6 +244,9 @@ class FilterLandmarks(torch.nn.Module):
             pose = pose[:, :, :, :2]
         return pose.permute(2, 1, 0, 3)
 
+    def __str__(self):
+        return "FilterLandmarks"
+
 
 class PadTruncateFrames(torch.nn.Module):
     def __init__(self, max_len: int):
@@ -255,6 +273,9 @@ class PadTruncateFrames(torch.nn.Module):
             )
         else:
             return datum[: self.max_len]
+
+    def __str__(self):
+        return "PadTruncateFrames"
 
 
 class RandomSampleFrames(torch.nn.Module):
@@ -290,6 +311,9 @@ class RandomSampleFrames(torch.nn.Module):
             indices.append(torch.randint(i * chunk_size, (i + 1) * chunk_size, [1]))
         return pose[indices, :, :, :]
 
+    def __str__(self):
+        return "RandomSampleFrames"
+
 
 class ReplaceNansWithZeros(torch.nn.Module):
     def forward(self, tensor: Tensor) -> Tensor:
@@ -299,6 +323,9 @@ class ReplaceNansWithZeros(torch.nn.Module):
             tensor: A tensor of shape (frames, people, keypoints, dimensions) representing a pose.
         """
         return torch.nan_to_num(tensor, nan=0.0)
+
+    def __str__(self):
+        return "ReplaceNansWithZeros"
 
 
 class UseFramesDiffs(torch.nn.Module):
@@ -312,6 +339,9 @@ class UseFramesDiffs(torch.nn.Module):
         """
         return tensor[1:] - tensor[:-1]
 
+    def __str__(self):
+        return "UseFramesDiffs"
+
 
 class FlattenKeypoints(torch.nn.Module):
     def forward(self, tensor: Tensor) -> Tensor:
@@ -324,3 +354,6 @@ class FlattenKeypoints(torch.nn.Module):
         """
         frames, people, keypoints, dimensions = tensor.shape
         return tensor.view(frames, people * keypoints * dimensions)
+
+    def __str__(self):
+        return "FlattenKeypoints"

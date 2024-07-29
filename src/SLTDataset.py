@@ -1,6 +1,5 @@
 import os, json
-
-from typing import Literal, Optional, TypedDict, Any, Callable
+from typing import Literal, Optional, TypedDict
 
 import pandas as pd
 from tqdm import tqdm
@@ -10,6 +9,7 @@ from torch.utils.data import Dataset
 from torchvision.transforms.v2 import Compose
 
 from posecraft.Pose import Pose
+from WordLevelTokenizer import WordLevelTokenizer
 
 # patch numpy types to solve skvideo issue: https://github.com/scikit-video/scikit-video/issues/154#issuecomment-1445239790
 import numpy
@@ -44,14 +44,15 @@ class SLTDataset(Dataset):
         output_mode: OutputType,
         split: Optional[Literal["train", "val", "test"]] = None,
         transforms: Optional[Compose] = None,
-        output_transforms: Optional[Callable] = None,
+        tokenizer=WordLevelTokenizer(),
+        max_tokens: Optional[int] = None,
     ):
         self.data_dir = data_dir
         self.input_mode = input_mode
         self.output_mode = output_mode
         self.split = split
         self.transforms = transforms
-        self.output_transforms = output_transforms
+        self.tokenizer = tokenizer
 
         try:
             self.metadata: Metadata = json.load(
@@ -75,6 +76,13 @@ class SLTDataset(Dataset):
         elif self.output_mode == "gloss":
             assert "gloss" in self.annotations.columns, "Gloss annotations not found"
             self.annotations["gloss"] = self.annotations["gloss"].astype(str)
+        self.tokenizer.fit(self.annotations[self.output_mode].tolist())
+        self.token_ids: Tensor = self.tokenizer(
+            self.annotations["text"].tolist(),
+            padding=("max_length" if max_tokens is not None else "longest"),
+            max_length=max_tokens,
+            return_tensors="pt",
+        )  # type: ignore
 
         self.missing_files = []
         for id in tqdm(self.annotations["id"], desc="Validating files"):
@@ -129,12 +137,11 @@ class SLTDataset(Dataset):
             y_data = self.get_gloss(idx)
         return x_data, y_data
 
-    def __getitem__(self, idx: int) -> tuple[Tensor, Any]:
+    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor]:
         x_data, y_data = self.get_item_raw(idx)
         if self.transforms:
             x_data = self.transforms(x_data)
-        if self.output_transforms:
-            y_data = self.output_transforms(y_data)
+        y_data = self.token_ids[idx]
         return x_data, y_data
 
     def visualize_pose(

@@ -6,7 +6,7 @@ rwth_phoenix2014_t
 .DS_Store
 __pycache__/
 visualizations/
-checkpoints/
+checkpoint/
 results/
 *.mp4
 .temp
