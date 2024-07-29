@@ -14,6 +14,7 @@ from torch.nn.modules.normalization import LayerNorm
 
 class InterpEncoderLayer(TransformerEncoderLayer):
 
+    # self-attention block
     def _sa_block(
         self,
         x: Tensor,
@@ -28,6 +29,7 @@ class InterpEncoderLayer(TransformerEncoderLayer):
             attn_mask=attn_mask,
             key_padding_mask=key_padding_mask,
             need_weights=True,
+            average_attn_weights=True,#False
             is_causal=is_causal,
         )[0]
         return self.dropout1(x)
@@ -51,6 +53,7 @@ class InterpDecoderLayer(TransformerDecoderLayer):
             key_padding_mask=key_padding_mask,
             is_causal=is_causal,
             need_weights=True,
+            average_attn_weights=True,#False
         )[0]
         return self.dropout1(x)
 
@@ -71,6 +74,7 @@ class InterpDecoderLayer(TransformerDecoderLayer):
             key_padding_mask=key_padding_mask,
             is_causal=is_causal,
             need_weights=True,
+            average_attn_weights=True,#False
         )[0]
         return self.dropout2(x)
 
