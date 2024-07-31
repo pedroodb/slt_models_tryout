@@ -147,22 +147,12 @@ class SLTDataset(Dataset):
     def visualize_pose(
         self,
         idx: int,
-        use_video=True,
-        h: Optional[int] = None,
-        w: Optional[int] = None,
-        size=1,
+        h: Optional[int] = 4,
+        w: Optional[int] = 4,
+        size=10,
         transforms: Optional[Compose] = None,
-        out_path: Optional[str] = None,
     ):
-        pose = Pose(
-            pose=transforms(self.get_pose(idx)) if transforms else self.get_pose(idx)
-        )
-        video = pose.generate_video(
-            video=self.get_video(idx) if use_video else None,
-            h=h,
-            w=w,
-            size=size,
-        )
-        if out_path is not None:
-            vwrite(out_path, video)
-        return video
+        pose, text = self.get_item_raw(idx)
+        pose = Pose(pose=transforms(pose) if transforms else pose)
+        anim = pose.animate(h=h, w=w, size=size, title=text)
+        return anim
