@@ -76,9 +76,13 @@ class SLTDataset(Dataset):
         elif self.output_mode == "gloss":
             assert "gloss" in self.annotations.columns, "Gloss annotations not found"
             self.annotations["gloss"] = self.annotations["gloss"].astype(str)
-        self.tokenizer.fit(self.annotations[self.output_mode].tolist())
+        self.tokenizer.fit(
+            self.annotations[self.annotations["split"] == "train"][
+                self.output_mode
+            ].tolist()
+        )
         self.token_ids: Tensor = self.tokenizer(
-            self.annotations["text"].tolist(),
+            self.annotations[output_mode].tolist(),
             padding=("max_length" if max_tokens is not None else "longest"),
             max_length=max_tokens,
             return_tensors="pt",

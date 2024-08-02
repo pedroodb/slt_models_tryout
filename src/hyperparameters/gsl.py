@@ -10,7 +10,7 @@ from posecraft.transforms import (
 
 LANDMARKS_USED: list[Component] = ["body", "lhand", "rhand"]
 USE_3D: bool = False
-MAX_FRAMES: int = 80
+MAX_FRAMES: int = 30
 
 TRANSFORMS = [
     FilterLandmarks(Pose.get_components_mask(LANDMARKS_USED), USE_3D),
@@ -23,16 +23,16 @@ TRANSFORMS = [
 hp: HyperParameters = {
     # Data hyperparameters
     "INPUT_MODE": "pose",
-    "OUTPUT_MODE": "text",
+    "OUTPUT_MODE": "gloss",
     "BATCH_SIZE": 64,
     "MAX_FRAMES": MAX_FRAMES,
-    "MAX_TOKENS": 40,
+    "MAX_TOKENS": 20,
     "LANDMARKS_USED": LANDMARKS_USED,
     "USE_3D": USE_3D,
     "TRANSFORMS": TRANSFORMS,
     # Model hyperparameters
-    "D_MODEL": 128,
-    "DROPOUT": 0.3,
+    "D_MODEL": 16,
+    "DROPOUT": 0.2,
     "NUM_ENCODER_LAYERS": 1,
     "NUM_DECODER_LAYERS": 4,
     # Training hyperparameters
