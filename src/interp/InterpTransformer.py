@@ -1,4 +1,4 @@
-from typing import Optional, Any, Union, Callable
+from typing import Optional, Any, Union, Callable, Dict, List
 
 import torch
 from torch import nn, Tensor
@@ -34,8 +34,88 @@ class InterpEncoderLayer(TransformerEncoderLayer):
         )[0]
         return self.dropout1(x)
 
-
+intermediate_outputs: Optional[Dict[str, List[Tensor]]] = None
+def clear_intermediate_outputs():
+    global intermediate_outputs
+    intermediate_outputs = None
 class InterpDecoderLayer(TransformerDecoderLayer):
+
+    def forward(
+        self,
+        tgt: Tensor,
+        memory: Tensor,
+        tgt_mask: Optional[Tensor] = None,
+        memory_mask: Optional[Tensor] = None,
+        tgt_key_padding_mask: Optional[Tensor] = None,
+        memory_key_padding_mask: Optional[Tensor] = None,
+        tgt_is_causal: bool = False,
+        memory_is_causal: bool = False,
+        # intermediate_outputs: Optional[Dict[str, List[Tensor]]] = None
+    ) -> Tensor:
+        r"""Pass the inputs (and mask) through the decoder layer.
+
+        Args:
+            tgt: the sequence to the decoder layer (required).
+            memory: the sequence from the last layer of the encoder (required).
+            tgt_mask: the mask for the tgt sequence (optional).
+            memory_mask: the mask for the memory sequence (optional).
+            tgt_key_padding_mask: the mask for the tgt keys per batch (optional).
+            memory_key_padding_mask: the mask for the memory keys per batch (optional).
+            tgt_is_causal: If specified, applies a causal mask as ``tgt mask``.
+                Default: ``False``.
+                Warning:
+                ``tgt_is_causal`` provides a hint that ``tgt_mask`` is
+                the causal mask. Providing incorrect hints can result in
+                incorrect execution, including forward and backward
+                compatibility.
+            memory_is_causal: If specified, applies a causal mask as
+                ``memory mask``.
+                Default: ``False``.
+                Warning:
+                ``memory_is_causal`` provides a hint that
+                ``memory_mask`` is the causal mask. Providing incorrect
+                hints can result in incorrect execution, including
+                forward and backward compatibility.
+            intermediate_outputs: Optional dictionary to store the intermediate outputs.
+
+        Shape:
+            see the docs in :class:`~torch.nn.Transformer`.
+        """
+        global intermediate_outputs
+        if intermediate_outputs is None:
+            intermediate_outputs = {}
+
+        x = tgt
+        if self.norm_first:
+            sa_out = self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal)
+            x = x + sa_out
+            if 'sa_block' not in intermediate_outputs:
+                intermediate_outputs['sa_block'] = []
+            intermediate_outputs['sa_block'].append(sa_out)
+
+            mha_out = self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask, memory_is_causal)
+            x = x + mha_out
+            if 'mha_block' not in intermediate_outputs:
+                intermediate_outputs['mha_block'] = []
+            intermediate_outputs['mha_block'].append(mha_out)
+
+            x = x + self._ff_block(self.norm3(x))
+        else:
+            sa_out = self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal)
+            x = self.norm1(x + sa_out)
+            if 'sa_block' not in intermediate_outputs:
+                intermediate_outputs['sa_block'] = []
+            intermediate_outputs['sa_block'].append(sa_out)
+
+            mha_out = self._mha_block(x, memory, memory_mask, memory_key_padding_mask, memory_is_causal)
+            x = self.norm2(x + mha_out)
+            if 'mha_block' not in intermediate_outputs:
+                intermediate_outputs['mha_block'] = []
+            intermediate_outputs['mha_block'].append(mha_out)
+
+            x = self.norm3(x + self._ff_block(x))
+
+        return x
 
     # self-attention block
     def _sa_block(
