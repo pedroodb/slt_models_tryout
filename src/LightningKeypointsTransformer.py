@@ -45,6 +45,9 @@ class LKeypointsTransformer(L.LightningModule):
         self.ys_step: list[str] = []
         self.beam_translations_step: list[str] = []
         self.greedy_translations_step: list[str] = []
+        self.translation_results_df: pd.DataFrame | None = None
+
+        self.save_hyperparameters()
 
     def forward(
         self, src: Tensor, tgt: Tensor, tgt_mask: Tensor, tgt_padding_mask: Tensor
@@ -135,7 +138,7 @@ class LKeypointsTransformer(L.LightningModule):
         self.log("bleu_2_beam", translation_results_df["bleu_2_beam"].mean())
         self.log("bleu_3_beam", translation_results_df["bleu_3_beam"].mean())
         self.log("bleu_4_beam", translation_results_df["bleu_4_beam"].mean())
-        translation_results_df.to_csv(f"results/translation/{self.logger.experiment.name}.csv", index=False)  # type: ignore
+        self.translation_results_df = translation_results_df
 
     def get_translations(
         self, batch: Tensor, batch_idx: int

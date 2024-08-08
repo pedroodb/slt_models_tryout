@@ -1,0 +1,25 @@
+{
+	"INPUT_MODE": "pose",
+	"OUTPUT_MODE": "gloss",
+	"BATCH_SIZE": 64,
+	"MAX_FRAMES": 30,
+	"MAX_TOKENS": 20,
+	"LANDMARKS_USED": [
+		"body",
+		"lhand",
+		"rhand"
+	],
+	"USE_3D": false,
+	"TRANSFORMS": [
+		"FilterLandmarks",
+		"RandomSampleFrames",
+		"ReplaceNansWithZeros",
+		"FlattenKeypoints"
+	],
+	"D_MODEL": 128,
+	"DROPOUT": 0.2,
+	"NUM_ENCODER_LAYERS": 1,
+	"NUM_DECODER_LAYERS": 4,
+	"USE_CLASS_WEIGHTS": false,
+	"LR": 1e-4
+}
