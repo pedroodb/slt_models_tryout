@@ -29,15 +29,20 @@ class InterpEncoderLayer(TransformerEncoderLayer):
             attn_mask=attn_mask,
             key_padding_mask=key_padding_mask,
             need_weights=True,
-            average_attn_weights=True,#False
+            average_attn_weights=True,  # False
             is_causal=is_causal,
         )[0]
         return self.dropout1(x)
 
+
 intermediate_outputs: Optional[Dict[str, List[Tensor]]] = None
+
+
 def clear_intermediate_outputs():
     global intermediate_outputs
     intermediate_outputs = None
+
+
 class InterpDecoderLayer(TransformerDecoderLayer):
 
     def forward(
@@ -87,31 +92,41 @@ class InterpDecoderLayer(TransformerDecoderLayer):
 
         x = tgt
         if self.norm_first:
-            sa_out = self._sa_block(self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal)
+            sa_out = self._sa_block(
+                self.norm1(x), tgt_mask, tgt_key_padding_mask, tgt_is_causal
+            )
             x = x + sa_out
-            if 'sa_block' not in intermediate_outputs:
-                intermediate_outputs['sa_block'] = []
-            intermediate_outputs['sa_block'].append(sa_out)
+            if "sa_block" not in intermediate_outputs:
+                intermediate_outputs["sa_block"] = []
+            intermediate_outputs["sa_block"].append(sa_out)
 
-            mha_out = self._mha_block(self.norm2(x), memory, memory_mask, memory_key_padding_mask, memory_is_causal)
+            mha_out = self._mha_block(
+                self.norm2(x),
+                memory,
+                memory_mask,
+                memory_key_padding_mask,
+                memory_is_causal,
+            )
             x = x + mha_out
-            if 'mha_block' not in intermediate_outputs:
-                intermediate_outputs['mha_block'] = []
-            intermediate_outputs['mha_block'].append(mha_out)
+            if "mha_block" not in intermediate_outputs:
+                intermediate_outputs["mha_block"] = []
+            intermediate_outputs["mha_block"].append(mha_out)
 
             x = x + self._ff_block(self.norm3(x))
         else:
             sa_out = self._sa_block(x, tgt_mask, tgt_key_padding_mask, tgt_is_causal)
             x = self.norm1(x + sa_out)
-            if 'sa_block' not in intermediate_outputs:
-                intermediate_outputs['sa_block'] = []
-            intermediate_outputs['sa_block'].append(sa_out)
+            if "sa_block" not in intermediate_outputs:
+                intermediate_outputs["sa_block"] = []
+            intermediate_outputs["sa_block"].append(sa_out)
 
-            mha_out = self._mha_block(x, memory, memory_mask, memory_key_padding_mask, memory_is_causal)
+            mha_out = self._mha_block(
+                x, memory, memory_mask, memory_key_padding_mask, memory_is_causal
+            )
             x = self.norm2(x + mha_out)
-            if 'mha_block' not in intermediate_outputs:
-                intermediate_outputs['mha_block'] = []
-            intermediate_outputs['mha_block'].append(mha_out)
+            if "mha_block" not in intermediate_outputs:
+                intermediate_outputs["mha_block"] = []
+            intermediate_outputs["mha_block"].append(mha_out)
 
             x = self.norm3(x + self._ff_block(x))
 
@@ -133,7 +148,7 @@ class InterpDecoderLayer(TransformerDecoderLayer):
             key_padding_mask=key_padding_mask,
             is_causal=is_causal,
             need_weights=True,
-            average_attn_weights=True,#False
+            average_attn_weights=True,  # False
         )[0]
         return self.dropout1(x)
 
@@ -154,7 +169,7 @@ class InterpDecoderLayer(TransformerDecoderLayer):
             key_padding_mask=key_padding_mask,
             is_causal=is_causal,
             need_weights=True,
-            average_attn_weights=True,#False
+            average_attn_weights=True,  # False
         )[0]
         return self.dropout2(x)
 
