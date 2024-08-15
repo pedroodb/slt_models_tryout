@@ -15,7 +15,10 @@ def reorganize_list(input_list, N):
 
 
 def plot_encoder_layers(
-    attn_output_weights: List[torch.Tensor], hp: HyperParameters, output_path: str
+    attn_output_weights: List[torch.Tensor],
+    hp: HyperParameters,
+    output_path: str,
+    transparent: bool = False,
 ):
     fig, axes = plt.subplots(1, hp["NUM_ENCODER_LAYERS"], figsize=(10, 5), sharey=True)
     for layer, attn_weights in enumerate(attn_output_weights):
@@ -33,7 +36,12 @@ def plot_encoder_layers(
         )  # vmin=0.0, vmax=1.0)
         ax.set_title(f"Layer {layer+1}")
 
-    plt.savefig(f"{output_path}/attn_self_heatmaps_encoder_layers.png")
+    file_extension = "png" if transparent else "jpg"
+    plt.savefig(
+        f"{output_path}/attn_self_heatmaps_encoder_layers.{file_extension}",
+        dpi=150,
+        transparent=transparent,
+    )
 
 
 def plot_decoder_layers(
@@ -42,6 +50,7 @@ def plot_decoder_layers(
     output_path: str,
     translation: List[str],
     mode: Literal["self", "cross"],
+    transparent: bool = False,
 ):
     tgt_length = len(translation) - 1  # from BOS to EOS-1
     fig, axes = plt.subplots(
@@ -70,7 +79,12 @@ def plot_decoder_layers(
 
     plt.subplots_adjust(wspace=0.4, hspace=0.4)
 
-    plt.savefig(f"{output_path}/attn_{mode}_heatmaps_decoder_layers.png", dpi=150)
+    file_extension = "png" if transparent else "jpg"
+    plt.savefig(
+        f"{output_path}/attn_{mode}_heatmaps_decoder_layers.{file_extension}",
+        dpi=150,
+        transparent=transparent,
+    )
 
 
 def plot_intermediate_outputs(
@@ -78,6 +92,7 @@ def plot_intermediate_outputs(
     hp: HyperParameters,
     output_path: str,
     translation: List[str],
+    transparent: bool = False,
 ):
     for k, v in intermediate_outputs.items():
         tgt_length = len(translation) - 1  # from BOS to EOS-1
@@ -113,4 +128,9 @@ def plot_intermediate_outputs(
 
         plt.subplots_adjust(wspace=0.4, hspace=0.4)
 
-        plt.savefig(f"{output_path}/attn_{k}_heatmaps_decoder_layers.png", dpi=150)
+        file_extension = "png" if transparent else "jpg"
+        plt.savefig(
+            f"{output_path}/attn_{k}_heatmaps_decoder_layers.{file_extension}",
+            dpi=150,
+            transparent=transparent,
+        )
