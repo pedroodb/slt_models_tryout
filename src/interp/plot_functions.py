@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 import numpy as np
 import seaborn as sns
+import pandas as pd
 import torch
-from typing import List, Literal, Dict
+from typing import List, Literal, Dict, Any
 
 from hyperparameters import HyperParameters
 
@@ -134,3 +136,118 @@ def plot_intermediate_outputs(
             dpi=150,
             transparent=transparent,
         )
+
+
+def plot_decoder_attn_weights(
+    attn_output_weights: Dict[str, List[torch.Tensor]],
+    hp: HyperParameters,
+    output_path: str,
+    translation: List[str],
+    layer: int,
+    norm_func: callable,
+    mode: Literal["heatmap", "lineplot"],
+    transparent: bool = False,
+    kwargs: Dict[str, Any] = {},
+) -> np.ndarray:
+    attn_output_weights = reorganize_list(attn_output_weights, hp["NUM_DECODER_LAYERS"])
+    lower = hp["NUM_DECODER_LAYERS"] * layer
+    upper = lower + hp["NUM_DECODER_LAYERS"]
+    attn_output_weights = attn_output_weights[lower:upper]
+    attn_weights = np.zeros_like(attn_output_weights[-1])
+    for i, attn_output_weights in enumerate(attn_output_weights):
+        attn_weights[i, :] = norm_func(attn_output_weights[i, :])
+    # attn_weights = attn_output_weights[-1]
+    # attn_weights = torch.from_numpy(attn_weights)
+    # attn_weights = torch.nn.functional.softmax(attn_weights, dim=0).numpy()
+
+    src_sent = np.arange(hp["MAX_FRAMES"])
+    tgt_sent = translation[1 : attn_weights.shape[0] + 1]
+    if mode == "heatmap":
+        sns.heatmap(
+            attn_weights,
+            xticklabels=src_sent,
+            yticklabels=tgt_sent,
+            **kwargs,
+        )
+    elif mode == "lineplot":
+        df_attn_weights = pd.DataFrame(attn_weights.T)
+        df_attn_weights.columns = tgt_sent
+        ax = sns.lineplot(df_attn_weights, dashes=False)
+        ax.set_xticks(range(len(src_sent)))
+        ax.set_xticklabels(src_sent, rotation=90)
+
+    file_extension = "png" if transparent else "jpg"
+    plt.savefig(
+        f"{output_path}/attn_weights_{mode}_decoder_layer{layer}.{file_extension}",
+        dpi=150,
+        bbox_inches="tight",
+        transparent=transparent,
+    )
+
+    plt.close()
+
+    return attn_weights
+
+
+def plot_decoder_attn_weights_bars(
+    src_pose: torch.Tensor,
+    attn_weights: np.ndarray,
+    hp: HyperParameters,
+    output_path: str,
+    translation: List[str],
+    layer: int,
+    batch_index: int = 0,
+) -> FuncAnimation:
+    """
+    Displays keypoints as a pyplot visualization with an animated bar chart.
+    Args:
+    - src_pose (torch.Tensor): Tensor of shape (B, F, L) where L is the consecutive x, y values of keypoints.
+    - attn_weights (np.ndarray): Array of shape (N, F) where N is the number of words and F is the number of frames.
+    """
+
+    def get_update(scatter, keypoints_all_frames, bars, attn_weights, hp):
+        def update(frame):
+            # Reshape keypoints to have each pair (x, y) in a row
+            keypoints = keypoints_all_frames[frame, :].view(
+                -1, (3 if hp["USE_3D"] else 2)
+            )
+            x = keypoints[:, 0]
+            y = keypoints[:, 1]
+            scatter.set_offsets(torch.stack((x, y), dim=-1))
+
+            bar_heights = attn_weights[:, frame]
+            for bar, height in zip(bars, bar_heights):
+                bar.set_height(height)
+
+            return scatter, bars
+
+        return update
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.invert_yaxis()  # Invert y-axis so origin is at top-left
+
+    translation_filtered = translation[1:]  # Remove BOS
+    ax.set_title(" ".join(translation_filtered))
+
+    scatter = ax.scatter([], [], s=10)
+
+    keypoints_all_frames = src_pose[batch_index, :, :]
+
+    ax_bar = fig.add_axes([0.65, 0.63, 0.25, 0.25])
+    bars = ax_bar.bar(translation_filtered, attn_weights[:, 0], color="blue")
+    ax_bar.set_ylim(0, np.max(attn_weights))
+    ax_bar.set_xticks(range(len(translation_filtered)))
+    ax_bar.set_xticklabels(translation_filtered, rotation=90)
+
+    func_update = get_update(scatter, keypoints_all_frames, bars, attn_weights, hp)
+
+    num_frames = keypoints_all_frames.shape[0]
+    anim = FuncAnimation(fig, func_update, frames=num_frames, interval=50, blit=True)
+    anim.save(
+        f"{output_path}/attn_weights_sample_bars_decoder_layer{layer}.mp4",
+        writer="ffmpeg",
+    )
+
+    return anim
