@@ -4,7 +4,7 @@ import numpy as np
 import seaborn as sns
 import pandas as pd
 import torch
-from typing import List, Literal, Dict, Any
+from typing import List, Literal, Dict, Any, Callable
 
 from hyperparameters import HyperParameters
 
@@ -139,19 +139,19 @@ def plot_intermediate_outputs(
 
 
 def plot_decoder_attn_weights(
-    attn_output_weights: Dict[str, List[torch.Tensor]],
+    attn_output_weights: List[torch.Tensor],
     hp: HyperParameters,
     output_path: str,
     translation: List[str],
     layer: int,
-    norm_func: callable,
+    norm_func: Callable,
     mode: Literal["heatmap", "lineplot"],
     transparent: bool = False,
     kwargs: Dict[str, Any] = {},
 ) -> np.ndarray:
     attn_output_weights = reorganize_list(attn_output_weights, hp["NUM_DECODER_LAYERS"])
-    lower = hp["NUM_DECODER_LAYERS"] * layer
-    upper = lower + hp["NUM_DECODER_LAYERS"]
+    lower = (len(translation) - 1) * layer
+    upper = lower + (len(translation) - 1)
     attn_output_weights = attn_output_weights[lower:upper]
     attn_weights = np.zeros_like(attn_output_weights[-1])
     for i, attn_output_weights in enumerate(attn_output_weights):
