@@ -1,5 +1,5 @@
 import json
-from typing import TypedDict
+from typing import TypedDict, Optional
 
 import torch
 
@@ -26,6 +26,7 @@ class HyperParameters(TypedDict):
     BATCH_SIZE: int
     MAX_FRAMES: int
     MAX_TOKENS: int
+    SAMPLE_RATE: Optional[int]
     LANDMARKS_USED: list[Component]
     USE_3D: bool
     TRANSFORMS: list[torch.nn.Module]
@@ -61,7 +62,9 @@ def load_hyperparameters_from_json(path: str) -> HyperParameters:
         elif transform == "PadTruncateFrames":
             transforms.append(PadTruncateFrames(hp["MAX_FRAMES"]))
         elif transform == "RandomSampleFrames":
-            transforms.append(RandomSampleFrames(hp["MAX_FRAMES"]))
+            transforms.append(
+                RandomSampleFrames(hp["SAMPLE_RATE"] if "SAMPLE_RATE" in hp else 1)
+            )
         elif transform == "ReplaceNansWithZeros":
             transforms.append(ReplaceNansWithZeros())
         elif transform == "UseFramesDiffs":

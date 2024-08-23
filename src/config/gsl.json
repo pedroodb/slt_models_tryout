@@ -2,7 +2,8 @@
 	"INPUT_MODE": "pose",
 	"OUTPUT_MODE": "gloss",
 	"BATCH_SIZE": 64,
-	"MAX_FRAMES": 30,
+	"MAX_FRAMES": 220,
+	"SAMPLE_RATE": 3,
 	"MAX_TOKENS": 20,
 	"LANDMARKS_USED": [
 		"body",
@@ -13,6 +14,7 @@
 	"TRANSFORMS": [
 		"FilterLandmarks",
 		"RandomSampleFrames",
+		"PadTruncateFrames",
 		"ReplaceNansWithZeros",
 		"FlattenKeypoints"
 	],

@@ -6,6 +6,7 @@ from torch import Tensor, nn
 from torch.nn.functional import relu, softmax
 
 from interp.InterpTransformer import InterpTransformer
+from helpers import create_src_mask
 
 
 class Conv1DEmbedder(nn.Module):
@@ -171,13 +172,21 @@ class KeypointsTransformer(nn.Module):
         return tgt_emb
 
     def forward(
-        self, src: Tensor, tgt: Tensor, tgt_mask: Tensor, tgt_padding_mask: Tensor
+        self,
+        src: Tensor,
+        tgt: Tensor,
+        src_mask: Tensor,
+        src_padding_mask: Tensor,
+        tgt_mask: Tensor,
+        tgt_padding_mask: Tensor,
     ) -> Tensor:
         """
         Forward pass of the model.
         Args:
             src: Tensor of shape (N, S, E)
             tgt: Tensor of shape (N, T)
+            src_mask: Tensor of shape (N, S, S)
+            src_padding_mask: Tensor of shape (N, S)
             tgt_mask: Tensor of shape (T, T)
             tgt_padding_mask: Tensor of shape (N, T)
         Returns:
@@ -213,21 +222,27 @@ class KeypointsTransformer(nn.Module):
         tgt_emb = self.embed_tgt(tgt)
         src_emb = self.src_pe(src_emb)
         tgt_emb = self.tgt_pe(tgt_emb)
-        # src_mask and src_key_padding_mask are set to none as we use the whole input at every timestep
         outs = self.transformer(
             src=src_emb,
             tgt=tgt_emb,
-            src_mask=None,
+            src_mask=src_mask,
             tgt_mask=tgt_mask,
-            src_key_padding_mask=None,
+            src_key_padding_mask=src_padding_mask,
             tgt_key_padding_mask=tgt_padding_mask,
         )
         return self.generator(outs)
 
-    def encode(self, src: Tensor) -> Tensor:
+    def encode(
+        self,
+        src: Tensor,
+        src_mask: Optional[Tensor] = None,
+        src_padding_mask: Optional[Tensor] = None,
+    ) -> Tensor:
         """
         Args:
             src: Tensor of shape (N, S, E)
+            src_mask: (S, S) mask
+            src_padding_mask: (N, S) mask
         Returns:
             Tensor of shape (N, S, H) representing the output of the encoder
         """
@@ -237,7 +252,7 @@ class KeypointsTransformer(nn.Module):
 
         src_emb = self.embed_src(src)
         src_emb = self.src_pe(src_emb)
-        return self.transformer.encoder(src_emb)
+        return self.transformer.encoder(src_emb, src_mask, src_padding_mask)
 
     def decode(
         self,
@@ -251,6 +266,7 @@ class KeypointsTransformer(nn.Module):
             tgt: Integer tensor of shape (N, T)
             memory: Tensor of shape (N, S, H) resulting from the encoder
             tgt_mask: (T, T) mask
+            tgt_padding_mask: (N, T) mask
         Returns:
             Tensor of shape (N, T, H) representing the output of the decoder
         """
@@ -297,7 +313,8 @@ class KeypointsTransformer(nn.Module):
         if memory is not None:
             out = self.decode(tgt, memory)
         elif src is not None:
-            memory = self.encode(src)
+            src_mask, src_padding_mask = create_src_mask(src, src.device)
+            memory = self.encode(src, src_mask, src_padding_mask)
             out = self.decode(tgt, memory)
         else:
             raise ValueError("Either src or memory must be provided")

@@ -39,6 +39,22 @@ def create_target_mask(
     return tgt_mask, tgt_padding_mask
 
 
+def create_src_mask(src: Tensor, device: torch.device) -> tuple[Tensor, Tensor]:
+    """
+    Create source padding mask for the transformer model.
+    Args:
+        src: (N, S, E) where N is the batch size, S is the source sequence length and E is the embedding size
+        device: torch device
+    Returns:
+        src_mask: (N, S, S), by default, all frames can see all frames, so all values set to 0
+        src_padding_mask: (N, S), for masking padding frames. A frame is padded if all its keypoints are zero.
+    """
+    src_seq_len = src.shape[1]
+    src_mask = torch.zeros((src_seq_len, src_seq_len), device=device)
+    src_padding_mask = (src.sum(dim=-1) == 0).bool().to(device)
+    return src_mask, src_padding_mask
+
+
 def load_from_old_checkpoint(
     checkpoint_path: str,
     hp: HyperParameters,

@@ -64,6 +64,7 @@ class SLTDataset(Dataset):
             )
             if split is not None:
                 self.annotations = self.annotations[self.annotations["split"] == split]
+                self.annotations.reset_index(drop=True, inplace=True)
             print(
                 f"Loaded {split if split is not None else ''} annotations at {os.path.join(data_dir, 'annotations.csv')}"
             )

@@ -7,7 +7,7 @@ from torchmetrics import Accuracy
 from torchmetrics.functional.text import bleu_score
 import lightning as L
 
-from helpers import create_target_mask
+from helpers import create_target_mask, create_src_mask
 from Translator import Translator
 from KeypointsTransformer import KeypointsTransformer
 from WordLevelTokenizer import WordLevelTokenizer
@@ -22,7 +22,7 @@ class LKeypointsTransformer(L.LightningModule):
         tokenizer: WordLevelTokenizer,
         translator: Translator,
         lr: float,
-        sample_input: tuple[Tensor, Tensor, Tensor, Tensor],
+        sample_input: tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor],
         class_weights: Tensor | None = None,
     ):
         super().__init__()
@@ -50,9 +50,17 @@ class LKeypointsTransformer(L.LightningModule):
         self.save_hyperparameters()
 
     def forward(
-        self, src: Tensor, tgt: Tensor, tgt_mask: Tensor, tgt_padding_mask: Tensor
+        self,
+        src: Tensor,
+        tgt: Tensor,
+        src_mask: Tensor,
+        src_padding_mask: Tensor,
+        tgt_mask: Tensor,
+        tgt_padding_mask: Tensor,
     ):
-        return self.model(src, tgt, tgt_mask, tgt_padding_mask)
+        return self.model(
+            src, tgt, src_mask, src_padding_mask, tgt_mask, tgt_padding_mask
+        )
 
     def configure_optimizers(self):
         optimizer = Adam(self.parameters(), lr=self.lr)
@@ -65,7 +73,10 @@ class LKeypointsTransformer(L.LightningModule):
         tgt_mask, tgt_padding_mask = create_target_mask(
             tgt_input, self.tokenizer.pad_token_id, self.running_device
         )
-        logits = self.model(src, tgt_input, tgt_mask, tgt_padding_mask)
+        src_mask, src_padding_mask = create_src_mask(src, self.running_device)
+        logits = self.model(
+            src, tgt_input, src_mask, src_padding_mask, tgt_mask, tgt_padding_mask
+        )
         tgt_output = tgt[:, 1:]
         loss = self.loss_fn(
             logits.reshape(-1, logits.shape[-1]),

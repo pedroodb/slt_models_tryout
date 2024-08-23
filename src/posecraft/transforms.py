@@ -279,37 +279,30 @@ class PadTruncateFrames(torch.nn.Module):
 
 
 class RandomSampleFrames(torch.nn.Module):
-    def __init__(self, max_len: int):
+    def __init__(self, rate: int):
         """
         Args:
-            max_len: An integer representing the maximum length to sample the frames.
+            rate: An integer representing the rate to sample the tensor.
         """
         super(RandomSampleFrames, self).__init__()
-        self.max_len = max_len
+        self.rate = rate
 
     def forward(self, pose: Tensor) -> Tensor:
         """
-        Randomly samples 1 frame per max_len chunks of frames.
+        Randomly samples 1 frame per rate frames.
         Args:
             pose: A tensor of shape (frames, people, keypoints, dimensions) representing a pose.
+        Returns:
+            A tensor of shape (frames // rate, people, keypoints, dimensions) where each frame is sampled randomly but following a sequence.
         """
-        if pose.size(0) < self.max_len:
-            return torch.cat(
-                [
-                    pose,
-                    torch.zeros(
-                        self.max_len - pose.size(0),
-                        pose.size(1),
-                        pose.size(2),
-                        pose.size(3),
-                    ),
-                ]
-            )
-        indices = []
-        chunk_size = pose.size(0) // self.max_len
-        for i in range(0, self.max_len):
-            indices.append(torch.randint(i * chunk_size, (i + 1) * chunk_size, [1]))
-        return pose[indices, :, :, :]
+        frames, people, keypoints, dimensions = pose.shape
+        chunks_indices = torch.arange(0, frames, self.rate)
+        random_indices = torch.randint(0, self.rate, (math.ceil(frames / self.rate),))
+        random_indices += chunks_indices
+        # if last index is greater than the number of frames, set it to the last frame
+        if random_indices[-1] >= frames:
+            random_indices[-1] = frames - 1
+        return pose[random_indices]
 
     def __str__(self):
         return "RandomSampleFrames"
