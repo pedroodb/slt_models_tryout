@@ -6,22 +6,7 @@ from torch import Tensor, nn
 from torch.nn.functional import relu, softmax
 
 from interp.InterpTransformer import InterpTransformer
-
-
-def create_src_mask(src: Tensor, device: torch.device) -> tuple[Tensor, Tensor]:
-    """
-    Create source padding mask for the transformer model.
-    Args:
-        src: (N, S, E) where N is the batch size, S is the source sequence length and E is the embedding size
-        device: torch device
-    Returns:
-        src_mask: (N, S, S), by default, all frames can see all frames, so all values set to 0
-        src_padding_mask: (N, S), for masking padding frames. A frame is padded if all its keypoints are zero.
-    """
-    src_seq_len = src.shape[1]
-    src_mask = torch.zeros((src_seq_len, src_seq_len), device=device)
-    src_padding_mask = (src.sum(dim=-1) == 0).bool().to(device)
-    return src_mask, src_padding_mask
+from helpers import create_src_mask
 
 
 class Conv1DEmbedder(nn.Module):
@@ -127,7 +112,7 @@ class KeypointsTransformer(nn.Module):
             num_decoder_layers: number of decoder layers (default=6)
             dropout: dropout rate (default=0.1)
         """
-        super(KeypointsTransformer, self).__init__()
+        super().__init__()
 
         self.src_keyp_emb = Conv1DEmbedder(
             in_channels=in_features, out_channels=d_model

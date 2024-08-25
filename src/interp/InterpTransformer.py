@@ -1,4 +1,4 @@
-from typing import Optional, Any, Union, Callable, Dict, List
+from typing import Optional, Any, Union, Callable
 
 import torch
 from torch import nn, Tensor
@@ -35,7 +35,7 @@ class InterpEncoderLayer(TransformerEncoderLayer):
         return self.dropout1(x)
 
 
-intermediate_outputs: Optional[Dict[str, List[Tensor]]] = None
+intermediate_outputs: Optional[dict[str, list[Tensor]]] = None
 
 
 def clear_intermediate_outputs():

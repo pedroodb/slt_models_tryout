@@ -1,11 +1,6 @@
 import torch
 from torch import Tensor
 
-from KeypointsTransformer import KeypointsTransformer
-from Translator import Translator
-from hyperparameters import HyperParameters
-from SLTDataset import SLTDataset
-
 
 def generate_square_subsequent_mask(size: int, device: torch.device) -> Tensor:
     """
@@ -51,44 +46,5 @@ def create_src_mask(src: Tensor, device: torch.device) -> tuple[Tensor, Tensor]:
     """
     src_seq_len = src.shape[1]
     src_mask = torch.zeros((src_seq_len, src_seq_len), device=device)
-    src_padding_mask = (src.sum(dim=-1) == 0).bool().to(device)
+    src_padding_mask = (src.sum(dim=-1) == 0).type_as(src).to(device)
     return src_mask, src_padding_mask
-
-
-def load_from_old_checkpoint(
-    checkpoint_path: str,
-    hp: HyperParameters,
-    device: torch.device,
-    landmarks_mask: torch.Tensor,
-    train_dataset: SLTDataset,
-) -> tuple[KeypointsTransformer, Translator]:
-    num_keypoints = landmarks_mask.sum().item()
-    in_features = int(num_keypoints * (3 if hp["USE_3D"] else 2))
-
-    model = KeypointsTransformer(
-        src_len=hp["MAX_FRAMES"],
-        tgt_len=hp["MAX_TOKENS"],
-        in_features=in_features,
-        tgt_vocab_size=train_dataset.tokenizer.vocab_size,
-        d_model=hp["D_MODEL"],
-        num_encoder_layers=hp["NUM_ENCODER_LAYERS"],
-        num_decoder_layers=hp["NUM_DECODER_LAYERS"],
-        dropout=hp["DROPOUT"],
-        interp=True,
-    )
-
-    checkpoint = torch.load(checkpoint_path, map_location=device)["state_dict"]
-    adjusted_checkpoint = {}
-
-    for key, value in checkpoint.items():
-        if key.startswith("model."):
-            adjusted_key = key[len("model.") :]  # Elimina el prefijo 'model.'
-            adjusted_checkpoint[adjusted_key] = value
-        else:
-            adjusted_checkpoint[key] = value
-
-    model.load_state_dict(adjusted_checkpoint)
-
-    translator = Translator(device, hp["MAX_TOKENS"])
-
-    return model, translator

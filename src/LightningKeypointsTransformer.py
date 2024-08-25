@@ -7,32 +7,48 @@ from torchmetrics import Accuracy
 from torchmetrics.functional.text import bleu_score
 import lightning as L
 
+from hyperparameters import HyperParameters
 from helpers import create_target_mask, create_src_mask
 from Translator import Translator
 from KeypointsTransformer import KeypointsTransformer
 from WordLevelTokenizer import WordLevelTokenizer
+from Translator import Translator
+from posecraft.Pose import Pose
 
 
 class LKeypointsTransformer(L.LightningModule):
 
     def __init__(
         self,
-        model: KeypointsTransformer,
+        hp: HyperParameters,
         device: torch.device,
         tokenizer: WordLevelTokenizer,
-        translator: Translator,
-        lr: float,
-        sample_input: tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor],
+        interp: bool = False,
         class_weights: Tensor | None = None,
     ):
         super().__init__()
-        self.model = model
+
+        # Model definition
+        num_keypoints = Pose.get_components_mask(hp["LANDMARKS_USED"]).sum().item()
+        in_features = int(num_keypoints * (3 if hp["USE_3D"] else 2))
+        self.hp = hp
+        self.model = KeypointsTransformer(
+            src_len=hp["MAX_FRAMES"],
+            tgt_len=hp["MAX_TOKENS"],
+            in_features=in_features,
+            tgt_vocab_size=tokenizer.vocab_size,
+            d_model=hp["D_MODEL"],
+            num_encoder_layers=hp["NUM_ENCODER_LAYERS"],
+            num_decoder_layers=hp["NUM_DECODER_LAYERS"],
+            dropout=hp["DROPOUT"],
+            interp=interp,
+        )
+
+        # Other configurations
         self.loss_fn = cross_entropy
-        self.lr = lr
         self.running_device = device
         self.tokenizer = tokenizer
-        self.translator = translator
-        self.example_input_array = sample_input
+        self.translator = Translator(device, hp["MAX_TOKENS"])
         self.accuracy = Accuracy(
             task="multiclass",
             num_classes=self.tokenizer.vocab_size,
@@ -41,7 +57,9 @@ class LKeypointsTransformer(L.LightningModule):
         self.class_weights = class_weights
         if self.class_weights is not None:
             self.class_weights = self.class_weights.to(self.running_device)
+        self.example_input_array = self.get_sample_input(in_features)
 
+        # List initialization for translation results during test
         self.ys_step: list[str] = []
         self.beam_translations_step: list[str] = []
         self.greedy_translations_step: list[str] = []
@@ -63,21 +81,21 @@ class LKeypointsTransformer(L.LightningModule):
         )
 
     def configure_optimizers(self):
-        optimizer = Adam(self.parameters(), lr=self.lr)
+        optimizer = Adam(self.parameters(), lr=self.hp["LR"])
         return optimizer
 
     def run_on_batch(self, batch):
         src, tgt = batch
         # tgt_input and tgt_ouptut are displaced by one position, so tgt_input[i] is the input to the model and tgt_output[i] is the expected output
-        tgt_input = tgt[:, :-1]
+        tgt_input: Tensor = tgt[:, :-1]
         tgt_mask, tgt_padding_mask = create_target_mask(
             tgt_input, self.tokenizer.pad_token_id, self.running_device
         )
         src_mask, src_padding_mask = create_src_mask(src, self.running_device)
-        logits = self.model(
+        logits: Tensor = self.model(
             src, tgt_input, src_mask, src_padding_mask, tgt_mask, tgt_padding_mask
         )
-        tgt_output = tgt[:, 1:]
+        tgt_output: Tensor = tgt[:, 1:]
         loss = self.loss_fn(
             logits.reshape(-1, logits.shape[-1]),
             tgt_output.reshape(-1),
@@ -170,3 +188,25 @@ class LKeypointsTransformer(L.LightningModule):
                 )
             )
         return ys, preds_greedy, preds_beam
+
+    def get_sample_input(
+        self, input_features: int, batch_size: int = 1
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor, Tensor, Tensor]:
+        sample_src = torch.randn(batch_size, self.hp["MAX_FRAMES"], input_features)
+        sample_tgt = torch.randint(
+            0, self.tokenizer.vocab_size, (batch_size, self.hp["MAX_TOKENS"])
+        )
+        sample_src_mask, sample_src_padding_mask = create_src_mask(
+            sample_src, self.device
+        )
+        sample_tgt_mask, sample_tgt_padding_mask = create_target_mask(
+            sample_tgt, self.tokenizer.pad_token_id, self.device
+        )
+        return (
+            sample_src,
+            sample_tgt,
+            sample_src_mask,
+            sample_src_padding_mask,
+            sample_tgt_mask,
+            sample_tgt_padding_mask,
+        )
