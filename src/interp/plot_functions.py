@@ -1,5 +1,6 @@
-from typing import Any, Literal, Callable, Optional
+from typing import Any, Literal, Optional
 
+import torch
 from torch import Tensor
 import numpy as np
 import pandas as pd
@@ -16,12 +17,15 @@ def plot_encoder_layers(
     output_path: Optional[str] = None,
     figsize: tuple[int, int] = (20, 20),
     transparent: bool = False,
+    src_padding_mask: Optional[Tensor] = None,
 ):
     fig, axes = plt.subplots(1, hp["NUM_ENCODER_LAYERS"], figsize=figsize, sharey=True)
     for layer, attn_weights in enumerate(attn_output_weights):
         ax = (
             axes[layer] if hp["NUM_ENCODER_LAYERS"] > 1 else axes
         )  # Handle case with only one layer
+        if src_padding_mask is not None:
+            attn_weights = attn_weights[:, ~src_padding_mask]
         sns.heatmap(
             attn_weights,
             ax=ax,
@@ -48,6 +52,7 @@ def plot_decoder_layers(
     output_path: Optional[str] = None,
     figsize: tuple[int, int] = (20, 20),
     transparent: bool = False,
+    src_padding_mask: Optional[Tensor] = None,
 ):
     tgt_length = len(translation) - 1  # from BOS to EOS-1
     fig, axes = plt.subplots(
@@ -58,6 +63,8 @@ def plot_decoder_layers(
             attn_weights = attn_weights[0]
             ax = axes[token, layer]
             tgt_sent = translation[1 : attn_weights.shape[0] + 1]
+            if mode == "cross" and src_padding_mask is not None:
+                attn_weights = attn_weights[:, ~src_padding_mask]
             sns.heatmap(
                 attn_weights,
                 ax=ax,
@@ -135,55 +142,42 @@ def plot_intermediate_outputs(
             )
 
 
-def plot_decoder_attn_weights(
-    attn_output_weights: list[Tensor],
-    hp: HyperParameters,
-    output_path: str,
-    translation: list[str],
-    layer: int,
-    norm_func: Callable,
+def plot_decoder_attn_per_frame(
+    decoder_ca: dict[int, list[Tensor]],
     mode: Literal["heatmap", "lineplot"],
+    translation: list[str],
+    output_path: Optional[str] = None,
     transparent: bool = False,
-    kwargs: dict[str, Any] = {},
-) -> np.ndarray:
-    attn_output_weights = reorganize_list(attn_output_weights, hp["NUM_DECODER_LAYERS"])
-    lower = (len(translation) - 1) * layer
-    upper = lower + (len(translation) - 1)
-    attn_output_weights = attn_output_weights[lower:upper]
-    attn_weights = np.zeros_like(attn_output_weights[-1])
-    for i, attn_output_weights in enumerate(attn_output_weights):
-        attn_weights[i, :] = norm_func(attn_output_weights[i, :])
-    # attn_weights = attn_output_weights[-1]
-    # attn_weights = torch.from_numpy(attn_weights)
-    # attn_weights = torch.nn.functional.softmax(attn_weights, dim=0).numpy()
+    figsize: tuple[int, int] = (10, 10),
+    src_padding_mask: Optional[Tensor] = None,
+):
+    fig, axes = plt.subplots(len(decoder_ca), 1, figsize=figsize, sharey=True)
+    for layer in decoder_ca:
+        attn_weights = decoder_ca[layer][-1][0]
+        if src_padding_mask is not None:
+            attn_weights = attn_weights[:, ~src_padding_mask]
+        tgt_sent = translation[1 : attn_weights.shape[0] + 1]
+        axes[layer].set_title(f"Layer {layer}")
+        if mode == "heatmap":
+            sns.heatmap(
+                attn_weights,
+                yticklabels=tgt_sent,
+                ax=axes[layer],
+            )
+        elif mode == "lineplot":
+            df_attn_weights = pd.DataFrame(attn_weights.T.tolist())
+            df_attn_weights.columns = tgt_sent
+            ax = sns.lineplot(df_attn_weights, dashes=False, ax=axes[layer])
 
-    src_sent = np.arange(hp["MAX_FRAMES"])
-    tgt_sent = translation[1 : attn_weights.shape[0] + 1]
-    if mode == "heatmap":
-        sns.heatmap(
-            attn_weights,
-            xticklabels=src_sent,
-            yticklabels=tgt_sent,
-            **kwargs,
+    if output_path is not None:
+        file_extension = "png" if transparent else "jpg"
+        plt.savefig(
+            f"{output_path}/attn_weights_{mode}_decoder_layer{layer}.{file_extension}",
+            dpi=150,
+            bbox_inches="tight",
+            transparent=transparent,
         )
-    elif mode == "lineplot":
-        df_attn_weights = pd.DataFrame(attn_weights.T)
-        df_attn_weights.columns = tgt_sent
-        ax = sns.lineplot(df_attn_weights, dashes=False)
-        ax.set_xticks(range(len(src_sent)))
-        ax.set_xticklabels(src_sent, rotation=90)
-
-    file_extension = "png" if transparent else "jpg"
-    plt.savefig(
-        f"{output_path}/attn_weights_{mode}_decoder_layer{layer}.{file_extension}",
-        dpi=150,
-        bbox_inches="tight",
-        transparent=transparent,
-    )
-
-    plt.close()
-
-    return attn_weights
+    return fig, axes
 
 
 def plot_decoder_attn_weights_bars(
