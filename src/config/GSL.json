@@ -18,10 +18,10 @@
 		"ReplaceNansWithZeros",
 		"FlattenKeypoints"
 	],
-	"D_MODEL": 128,
+	"D_MODEL": 8,
 	"DROPOUT": 0.2,
 	"NUM_ENCODER_LAYERS": 1,
-	"NUM_DECODER_LAYERS": 4,
+	"NUM_DECODER_LAYERS": 1,
 	"USE_CLASS_WEIGHTS": false,
-	"LR": 1e-4
+	"LR": 1e-3
 }
