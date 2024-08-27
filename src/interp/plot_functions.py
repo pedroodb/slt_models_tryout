@@ -48,7 +48,7 @@ def plot_encoder_layers(
     if output_path is not None:
         file_extension = "png" if transparent else "jpg"
         plt.savefig(
-            f"{output_path}attn_self_heatmaps_encoder_layers.{file_extension}",
+            f"{output_path}/attn_self_heatmaps_encoder_layers.{file_extension}",
             dpi=150,
             transparent=transparent,
         )
@@ -179,7 +179,7 @@ def plot_decoder_attn_per_frame(
     if output_path is not None:
         file_extension = "png" if transparent else "jpg"
         plt.savefig(
-            f"{output_path}/attn_weights_{mode}_decoder_layer{layer}.{file_extension}",
+            f"{output_path}/attn_weights_{mode}_decoder_layer.{file_extension}",
             dpi=150,
             bbox_inches="tight",
             transparent=transparent,
@@ -251,7 +251,7 @@ def plot_decoder_attn_weights_bars(
     num_frames = src_pose.shape[0]
     anim = FuncAnimation(fig, func_update, frames=num_frames, interval=50, blit=True)
     anim.save(
-        f"{output_path}/attn_weights_sample_bars_decoder_layer{layer}.mp4",
+        f"{output_path}/sample_w_attn_weights.mp4",
         writer="ffmpeg",
     )
 
