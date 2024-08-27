@@ -62,6 +62,11 @@ class SLTDataset(Dataset):
             self.annotations = pd.read_csv(
                 os.path.join(data_dir, os.path.join(data_dir, "annotations.csv"))
             )
+            self.tokenizer.fit(
+                self.annotations[self.annotations["split"] == "train"][
+                    self.output_mode
+                ].tolist()
+            )
             if split is not None:
                 self.annotations = self.annotations[self.annotations["split"] == split]
                 self.annotations.reset_index(drop=True, inplace=True)
@@ -77,11 +82,6 @@ class SLTDataset(Dataset):
         elif self.output_mode == "gloss":
             assert "gloss" in self.annotations.columns, "Gloss annotations not found"
             self.annotations["gloss"] = self.annotations["gloss"].astype(str)
-        self.tokenizer.fit(
-            self.annotations[self.annotations["split"] == "train"][
-                self.output_mode
-            ].tolist()
-        )
         self.token_ids: Tensor = self.tokenizer(
             self.annotations[output_mode].tolist(),
             padding=("max_length" if max_tokens is not None else "longest"),

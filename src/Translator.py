@@ -5,6 +5,7 @@ from torch import Tensor
 
 from WordLevelTokenizer import WordLevelTokenizer
 from KeypointsTransformer import KeypointsTransformer
+from helpers import create_src_mask
 
 
 class Translator:
@@ -77,8 +78,11 @@ class Translator:
         Returns:
             Tensor of shape (N, T) containing the output of the model until the end token or the maximum number of tokens is reached
         """
+        src_mask, src_padding_mask = create_src_mask(src, self.device)
         ys = torch.full((src.size(0), 1), bos).to(self.device)
-        prob, memory = model.predict_proba(ys, src=src)
+        prob, memory = model.predict_proba(
+            ys, src=src, src_padding_mask=src_padding_mask
+        )
         for _ in range(self.max_tokens - 1):
             _, next_word = torch.max(prob, dim=1)
             # if the last word is the end token, keep it and do not predict the next word
@@ -91,7 +95,9 @@ class Translator:
             ys = torch.cat([ys, next_word], dim=1)
             if (next_word == eos).all():
                 break
-            prob, memory = model.predict_proba(ys, memory=memory)
+            prob, memory = model.predict_proba(
+                ys, memory=memory, memory_padding_mask=src_padding_mask
+            )
         return ys
 
     def single_beam_decode(
@@ -111,8 +117,11 @@ class Translator:
         # ys is a Tensor of shape (k, T), initialized with the start token and beams_probs is a Tensor of shape (k) with the probabilities of each beam
         ys = torch.full((k, 1), bos).to(self.device)
         beams_probs = torch.ones(k).to(self.device)
+        src_mask, src_padding_mask = create_src_mask(src, self.device)
 
-        next_word_probs, memory = model.predict_proba(ys, src=src)
+        next_word_probs, memory = model.predict_proba(
+            ys, src=src, src_padding_mask=src_padding_mask
+        )
 
         for _ in range(self.max_tokens - 1):
             # repeat the possible ys and the probabilities k times to later generate k combinations for each beam
@@ -155,7 +164,9 @@ class Translator:
             if (ys[:, -1] == eos).all():
                 break
 
-            next_word_probs, memory = model.predict_proba(ys, memory=memory)
+            next_word_probs, memory = model.predict_proba(
+                ys, memory=memory, memory_padding_mask=src_padding_mask
+            )
         return ys[0].squeeze()
 
     def beam_decode(

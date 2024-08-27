@@ -30,7 +30,7 @@ def create_target_mask(
     """
     tgt_seq_len = tgt.shape[1]
     tgt_mask = generate_square_subsequent_mask(tgt_seq_len, device)
-    tgt_padding_mask = (tgt == pad_idx).type_as(tgt_mask)
+    tgt_padding_mask = tgt == pad_idx  # .type_as(tgt_mask)
     return tgt_mask, tgt_padding_mask
 
 
@@ -41,10 +41,10 @@ def create_src_mask(src: Tensor, device: torch.device) -> tuple[Tensor, Tensor]:
         src: (N, S, E) where N is the batch size, S is the source sequence length and E is the embedding size
         device: torch device
     Returns:
-        src_mask: (N, S, S), by default, all frames can see all frames, so all values set to 0
+        src_mask: (N, S, S), by default, all frames can see all frames, so all values set to 0.
         src_padding_mask: (N, S), for masking padding frames. A frame is padded if all its keypoints are zero.
     """
     src_seq_len = src.shape[1]
     src_mask = torch.zeros((src_seq_len, src_seq_len), device=device)
-    src_padding_mask = (src.sum(dim=-1) == 0).type_as(src).to(device)
+    src_padding_mask = (src.sum(dim=-1) == 0).bool().to(device)
     return src_mask, src_padding_mask

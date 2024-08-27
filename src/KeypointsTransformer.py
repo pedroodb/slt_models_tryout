@@ -6,7 +6,6 @@ from torch import Tensor, nn
 from torch.nn.functional import relu, softmax
 
 from interp.InterpTransformer import InterpTransformer
-from helpers import create_src_mask
 
 
 class Conv1DEmbedder(nn.Module):
@@ -229,6 +228,7 @@ class KeypointsTransformer(nn.Module):
             tgt_mask=tgt_mask,
             src_key_padding_mask=src_padding_mask,
             tgt_key_padding_mask=tgt_padding_mask,
+            memory_key_padding_mask=src_padding_mask,
         )
         return self.generator(outs)
 
@@ -258,6 +258,7 @@ class KeypointsTransformer(nn.Module):
         self,
         tgt: Tensor,
         memory: Tensor,
+        memory_padding_mask: Optional[Tensor] = None,
         tgt_mask: Optional[Tensor] = None,
         tgt_padding_mask: Optional[Tensor] = None,
     ) -> Tensor:
@@ -265,6 +266,7 @@ class KeypointsTransformer(nn.Module):
         Args:
             tgt: Integer tensor of shape (N, T)
             memory: Tensor of shape (N, S, H) resulting from the encoder
+            memory_padding_mask: (N, S) mask. Typically should be the same as src_padding_mask
             tgt_mask: (T, T) mask
             tgt_padding_mask: (N, T) mask
         Returns:
@@ -278,6 +280,7 @@ class KeypointsTransformer(nn.Module):
         return self.transformer.decoder(
             tgt=tgt_emb,
             memory=memory,
+            memory_key_padding_mask=memory_padding_mask,
             tgt_mask=tgt_mask,
             tgt_key_padding_mask=tgt_padding_mask,
         )
@@ -286,13 +289,17 @@ class KeypointsTransformer(nn.Module):
         self,
         tgt: Tensor,
         src: Optional[Tensor] = None,
+        src_padding_mask: Optional[Tensor] = None,
         memory: Optional[Tensor] = None,
+        memory_padding_mask: Optional[Tensor] = None,
     ) -> tuple[Tensor, Tensor]:
         """
         Args:
             tgt: Integer tensor of shape (N, T)
             src: Optional (N, S, E) shaped tensor
+            src_padding_mask: Optional (N, S) shaped tensor
             memory: Optional (N, S, H) shaped tensor. If provided, src is ignored
+            memory_padding_mask: Optional (N, S) shaped tensor. If provided, src_padding_mask is ignored
         Returns:
             Tuple of two tensors:
                 - Tensor of shape (N, T, tgt_vocab_size) representing the output of the model as a probabilty distribution (after softmax)
@@ -311,11 +318,10 @@ class KeypointsTransformer(nn.Module):
         ), f"Memory tensor should have 3 dimensions, got {memory.dim() if memory is not None else None}"
 
         if memory is not None:
-            out = self.decode(tgt, memory)
+            out = self.decode(tgt, memory, memory_padding_mask=memory_padding_mask)
         elif src is not None:
-            src_mask, src_padding_mask = create_src_mask(src, src.device)
-            memory = self.encode(src, src_mask, src_padding_mask)
-            out = self.decode(tgt, memory)
+            memory = self.encode(src, src_padding_mask=src_padding_mask)
+            out = self.decode(tgt, memory, memory_padding_mask=src_padding_mask)
         else:
             raise ValueError("Either src or memory must be provided")
         return (softmax(self.generator(out)[:, -1], dim=1), memory)
