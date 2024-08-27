@@ -1,8 +1,7 @@
-from typing import Any, Literal, Optional
+from typing import Literal, Optional, Callable
 
 import torch
 from torch import Tensor
-import numpy as np
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -19,6 +18,18 @@ def plot_encoder_layers(
     transparent: bool = False,
     src_padding_mask: Optional[Tensor] = None,
 ):
+    """
+    Plot the attention weights of the encoder layers.
+    Args:
+        attn_output_weights (list[Tensor]): List of tensors of shape (B, N, L) where B is the batch size, N is the number of words and L is the number of words in the source sentence.
+        hp (HyperParameters): Hyperparameters object.
+        output_path (str): Path to save the plot.
+        figsize (tuple[int, int]): Size of the figure.
+        transparent (bool): Whether to save the plot with a transparent background.
+        src_padding_mask (Tensor): Mask of shape (B, L) where L is the number of words in the source sentence.
+    Returns:
+        fig, ax: Figure and axis objects.
+    """
     fig, axes = plt.subplots(1, hp["NUM_ENCODER_LAYERS"], figsize=figsize, sharey=True)
     for layer, attn_weights in enumerate(attn_output_weights):
         ax = (
@@ -54,6 +65,20 @@ def plot_decoder_layers(
     transparent: bool = False,
     src_padding_mask: Optional[Tensor] = None,
 ):
+    """
+    Plot the attention weights of the decoder layers.
+    Args:
+        attn_output_weights (dict[int, list[Tensor]]): Dictionary of tensors of shape (B, N, L) where B is the batch size, N is the number of words and L is the number of words in the source sentence.
+        hp (HyperParameters): Hyperparameters object.
+        translation (list[str]): List of words in the translation.
+        mode (Literal["self", "cross"]): Whether to plot self-attention or cross-attention.
+        output_path (str): Path to save the plot.
+        figsize (tuple[int, int]): Size of the figure.
+        transparent (bool): Whether to save the plot with a transparent background.
+        src_padding_mask (Tensor): Mask of shape (B, L) where L is the number of words in the source sentence.
+    Returns:
+        fig, ax: Figure and axis objects.
+    """
     tgt_length = len(translation) - 1  # from BOS to EOS-1
     fig, axes = plt.subplots(
         tgt_length, hp["NUM_DECODER_LAYERS"], figsize=figsize, sharey=True
@@ -69,13 +94,15 @@ def plot_decoder_layers(
                 attn_weights,
                 ax=ax,
                 square=True,
-                cbar=False,
-            )  # vmin=0.0, vmax=1.0)
+                cbar=mode == "self",
+                vmin=0.0 if mode == "self" else None,
+                vmax=1.0 if mode == "self" else None,
+            )
             ax.set_aspect("auto")
             ax.set_yticklabels(tgt_sent, rotation=0)
             if mode == "self":
                 ax.set_xticklabels(translation[0 : attn_weights.shape[0]], rotation=90)
-            ax.set_title(f"Layer {layer}") if token == 0 else None
+            ax.set_title(f"Layer {layer + 1}") if token == 0 else None
     plt.subplots_adjust(wspace=0.4, hspace=0.4)
     if output_path:
         file_extension = "png" if transparent else "jpg"
@@ -87,59 +114,24 @@ def plot_decoder_layers(
     return fig, axes
 
 
-def reorganize_list(input_list, N):
-    grouped_list = []
-    for i in range(N):
-        grouped_list.extend(input_list[i::N])
-    return grouped_list
-
-
-def plot_intermediate_outputs(
-    intermediate_outputs: dict[str, list[Tensor]],
-    hp: HyperParameters,
-    output_path: str,
-    translation: list[str],
-    transparent: bool = False,
+def preprocess_attn_weights(
+    attn_weights: list[Tensor],
+    norm_func: Callable = lambda t: (t - t.min()) / (t.max() - t.min()),
 ):
-    for k, v in intermediate_outputs.items():
-        tgt_length = len(translation) - 1  # from BOS to EOS-1
-        fig, axes = plt.subplots(
-            tgt_length, hp["NUM_DECODER_LAYERS"], figsize=(20, 20), sharey=True
-        )
-        attn_output_weights = reorganize_list(v, hp["NUM_DECODER_LAYERS"])
-        for layer, attn_weights in enumerate(attn_output_weights):
-            i, j = divmod(layer, tgt_length)
-            # print(i, j, layer)
-            ax = axes[j, i]
-            emb_sent = np.arange(hp["D_MODEL"])  # embed_dim
-            tgt_sent = translation[1 : attn_weights.shape[0] + 1]
-            sns.heatmap(
-                attn_weights,
-                ax=ax,
-                square=True,
-                cbar=True,
-                annot=True,
-                fmt=".2f",
-                annot_kws={"size": 8},
-            )  # vmin=0.0, vmax=1.0)
-            ax.set_aspect("auto")
-            ax.set_yticklabels(tgt_sent, rotation=0)
-            ax.set_xticklabels(emb_sent, rotation=90)
-            ax.set_title(f"Layer {i+1}") if layer % tgt_length == 0 else None
-
-            # Rotate text annotations
-            for text in ax.texts:
-                text.set_rotation(90)
-
-        plt.subplots_adjust(wspace=0.4, hspace=0.4)
-
-        if output_path is not None:
-            file_extension = "png" if transparent else "jpg"
-            plt.savefig(
-                f"{output_path}/attn_{k}_heatmaps_decoder_layers.{file_extension}",
-                dpi=150,
-                transparent=transparent,
-            )
+    """
+    Preprocess the attention weights for plotting, taking for each token the attention weights of the last call where the word is the target.
+    Args:
+        attn_weights (list[Tensor]): List of tensors of shape (B, N, L) where B is the batch size, N is the number of words and L is the number of words in the source sentence.
+        norm_func (Callable): Function to normalize the attention weights.
+    Returns:
+        processed_attn_weights: Processed attention weights.
+    """
+    # take for each word the attention weights of the call where the word is the target
+    processed_attn_weights = torch.zeros_like(attn_weights[-1])
+    for i, attn_output_weights in enumerate(attn_weights):
+        processed_attn_weights[0, i, :] = norm_func(attn_output_weights[0, i, :])
+    processed_attn_weights = processed_attn_weights.squeeze(0)
+    return processed_attn_weights
 
 
 def plot_decoder_attn_per_frame(
@@ -150,14 +142,29 @@ def plot_decoder_attn_per_frame(
     transparent: bool = False,
     figsize: tuple[int, int] = (10, 10),
     src_padding_mask: Optional[Tensor] = None,
+    norm_func: Callable = lambda t: (t - t.min()) / (t.max() - t.min()),
 ):
+    """
+    Plot the attention weights of the decoder layers per frame.
+    Args:
+        decoder_ca (dict[int, list[Tensor]]): Dictionary of tensors of shape (B, N, L) where B is the batch size, N is the number of words and L is the number of words in the source sentence.
+        mode (Literal["heatmap", "lineplot"]): Whether to plot the attention weights as a heatmap or lineplot.
+        translation (list[str]): List of words in the translation.
+        output_path (str): Path to save the plot.
+        transparent (bool): Whether to save the plot with a transparent background.
+        figsize (tuple[int, int]): Size of the figure.
+        src_padding_mask (Tensor): Mask of shape (B, L) where L is the number of words in the source sentence.
+        norm_func (Callable): Function to normalize the attention weights.
+    Returns:
+        fig, axes: Figure and axis objects
+    """
     fig, axes = plt.subplots(len(decoder_ca), 1, figsize=figsize, sharey=True)
     for layer in decoder_ca:
-        attn_weights = decoder_ca[layer][-1][0]
+        attn_weights = preprocess_attn_weights(decoder_ca[layer], norm_func)
         if src_padding_mask is not None:
             attn_weights = attn_weights[:, ~src_padding_mask]
         tgt_sent = translation[1 : attn_weights.shape[0] + 1]
-        axes[layer].set_title(f"Layer {layer}")
+        axes[layer].set_title(f"Layer {layer + 1}")
         if mode == "heatmap":
             sns.heatmap(
                 attn_weights,
@@ -182,18 +189,26 @@ def plot_decoder_attn_per_frame(
 
 def plot_decoder_attn_weights_bars(
     src_pose: Tensor,
-    attn_weights: np.ndarray,
+    decoder_ca: dict[int, list[Tensor]],
     hp: HyperParameters,
     output_path: str,
     translation: list[str],
-    layer: int,
-    batch_index: int = 0,
+    layer: int = 0,
+    norm_func: Callable = lambda t: (t - t.min()) / (t.max() - t.min()),
 ) -> FuncAnimation:
     """
     Displays keypoints as a pyplot visualization with an animated bar chart.
     Args:
-    - src_pose (torch.Tensor): Tensor of shape (B, F, L) where L is the consecutive x, y values of keypoints.
-    - attn_weights (np.ndarray): Array of shape (N, F) where N is the number of words and F is the number of frames.
+        src_pose (Tensor): Tensor of shape (B, N, 2) where B is the batch size, N is the number of keypoints and 2 is the x and y coordinates.
+        decoder_ca (dict[int, list[Tensor]]): Dictionary of tensors of shape (B, N, L) where B is the batch size, N is the number of words and L is the number of words in the source sentence.
+        hp (HyperParameters): Hyperparameters object.
+        output_path (str): Path to save the animation.
+        translation (list[str]): List of words in the translation.
+        layer (int): Layer of the decoder.
+        batch_index (int): Index of the batch.
+        norm_func (Callable): Function to normalize the attention weights.
+    Returns:
+        anim: Animation object.
     """
 
     def get_update(scatter, keypoints_all_frames, bars, attn_weights, hp):
@@ -224,17 +239,16 @@ def plot_decoder_attn_weights_bars(
 
     scatter = ax.scatter([], [], s=10)
 
-    keypoints_all_frames = src_pose[batch_index, :, :]
-
-    ax_bar = fig.add_axes([0.65, 0.63, 0.25, 0.25])
+    ax_bar = fig.add_axes((0.65, 0.63, 0.25, 0.25))
+    attn_weights = preprocess_attn_weights(decoder_ca[layer], norm_func)
     bars = ax_bar.bar(translation_filtered, attn_weights[:, 0], color="blue")
-    ax_bar.set_ylim(0, np.max(attn_weights))
+    ax_bar.set_ylim(0, attn_weights.max().item())
     ax_bar.set_xticks(range(len(translation_filtered)))
     ax_bar.set_xticklabels(translation_filtered, rotation=90)
 
-    func_update = get_update(scatter, keypoints_all_frames, bars, attn_weights, hp)
+    func_update = get_update(scatter, src_pose, bars, attn_weights, hp)
 
-    num_frames = keypoints_all_frames.shape[0]
+    num_frames = src_pose.shape[0]
     anim = FuncAnimation(fig, func_update, frames=num_frames, interval=50, blit=True)
     anim.save(
         f"{output_path}/attn_weights_sample_bars_decoder_layer{layer}.mp4",
