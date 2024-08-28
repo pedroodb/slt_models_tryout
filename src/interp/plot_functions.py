@@ -38,11 +38,12 @@ def plot_encoder_layers(
         if src_padding_mask is not None:
             attn_weights = attn_weights[:, ~src_padding_mask]
         sns.heatmap(
-            attn_weights,
+            attn_weights.T,
             ax=ax,
             square=True,
             cbar=False,
         )
+        ax.set_yticklabels(ax.get_yticklabels(), rotation=0)
         ax.set_title(f"Layer {layer+1}")
 
     if output_path is not None:
@@ -86,7 +87,9 @@ def plot_decoder_layers(
     for layer in attn_output_weights:
         for token, attn_weights in enumerate(attn_output_weights[layer]):
             attn_weights = attn_weights[0]
-            ax = axes[token, layer]
+            ax = (
+                axes[token, layer] if hp["NUM_ENCODER_LAYERS"] > 1 else axes[token]
+            )  # Handle case with only one layer
             tgt_sent = translation[1 : attn_weights.shape[0] + 1]
             if mode == "cross" and src_padding_mask is not None:
                 attn_weights = attn_weights[:, ~src_padding_mask]
@@ -136,6 +139,7 @@ def preprocess_attn_weights(
 
 def plot_decoder_attn_per_frame(
     decoder_ca: dict[int, list[Tensor]],
+    hp: HyperParameters,
     mode: Literal["heatmap", "lineplot"],
     translation: list[str],
     output_path: Optional[str] = None,
@@ -160,21 +164,24 @@ def plot_decoder_attn_per_frame(
     """
     fig, axes = plt.subplots(len(decoder_ca), 1, figsize=figsize, sharey=True)
     for layer in decoder_ca:
+        ax = (
+            axes[layer] if hp["NUM_DECODER_LAYERS"] > 1 else axes
+        )  # Handle case with only one layer
         attn_weights = preprocess_attn_weights(decoder_ca[layer], norm_func)
         if src_padding_mask is not None:
             attn_weights = attn_weights[:, ~src_padding_mask]
         tgt_sent = translation[1 : attn_weights.shape[0] + 1]
-        axes[layer].set_title(f"Layer {layer + 1}")
+        ax.set_title(f"Layer {layer + 1}")
         if mode == "heatmap":
             sns.heatmap(
                 attn_weights,
                 yticklabels=tgt_sent,
-                ax=axes[layer],
+                ax=ax,
             )
         elif mode == "lineplot":
             df_attn_weights = pd.DataFrame(attn_weights.T.tolist())
             df_attn_weights.columns = tgt_sent
-            ax = sns.lineplot(df_attn_weights, dashes=False, ax=axes[layer])
+            ax = sns.lineplot(df_attn_weights, dashes=False, ax=ax)
 
     if output_path is not None:
         file_extension = "png" if transparent else "jpg"
