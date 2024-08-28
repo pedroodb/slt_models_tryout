@@ -88,7 +88,7 @@ def plot_decoder_layers(
         for token, attn_weights in enumerate(attn_output_weights[layer]):
             attn_weights = attn_weights[0]
             ax = (
-                axes[token, layer] if hp["NUM_ENCODER_LAYERS"] > 1 else axes[token]
+                axes[token, layer] if hp["NUM_DECODER_LAYERS"] > 1 else axes[token]
             )  # Handle case with only one layer
             tgt_sent = translation[1 : attn_weights.shape[0] + 1]
             if mode == "cross" and src_padding_mask is not None:
@@ -104,7 +104,7 @@ def plot_decoder_layers(
             ax.set_aspect("auto")
             ax.set_yticklabels(tgt_sent, rotation=0)
             if mode == "self":
-                ax.set_xticklabels(translation[0 : attn_weights.shape[0]], rotation=90)
+                ax.set_xticklabels(tgt_sent, rotation=90)
             ax.set_title(f"Layer {layer + 1}") if token == 0 else None
     plt.subplots_adjust(wspace=0.4, hspace=0.4)
     if output_path:
@@ -182,6 +182,7 @@ def plot_decoder_attn_per_frame(
             df_attn_weights = pd.DataFrame(attn_weights.T.tolist())
             df_attn_weights.columns = tgt_sent
             ax = sns.lineplot(df_attn_weights, dashes=False, ax=ax)
+            ax.legend(loc='lower right', fontsize=8)
 
     if output_path is not None:
         file_extension = "png" if transparent else "jpg"

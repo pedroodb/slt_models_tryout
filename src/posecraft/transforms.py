@@ -307,6 +307,42 @@ class RandomSampleFrames(torch.nn.Module):
     def __str__(self):
         return "RandomSampleFrames"
 
+class RandomSampleFrameLegacy(torch.nn.Module):
+    def __init__(self, max_len: int):
+        """
+        Args:
+            max_len: An integer representing the maximum length to sample the frames.
+        """
+        super(RandomSampleFrameLegacy, self).__init__()
+        self.max_len = max_len
+
+    def forward(self, pose: Tensor) -> Tensor:
+        """
+        Randomly samples 1 frame per max_len chunks of frames.
+        Args:
+            pose: A tensor of shape (frames, people, keypoints, dimensions) representing a pose.
+        """
+        if pose.size(0) < self.max_len:
+            return torch.cat(
+                [
+                    pose,
+                    torch.zeros(
+                        self.max_len - pose.size(0),
+                        pose.size(1),
+                        pose.size(2),
+                        pose.size(3),
+                    ),
+                ]
+            )
+        indices = []
+        chunk_size = pose.size(0) // self.max_len
+        for i in range(0, self.max_len):
+            indices.append(torch.randint(i * chunk_size, (i + 1) * chunk_size, [1]))
+        return pose[indices, :, :, :]
+
+    def __str__(self):
+        return "RandomSampleFrameLegacy"
+
 
 class ReplaceNansWithZeros(torch.nn.Module):
     def forward(self, tensor: Tensor) -> Tensor:
