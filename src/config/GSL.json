@@ -2,8 +2,8 @@
 	"INPUT_MODE": "pose",
 	"OUTPUT_MODE": "gloss",
 	"BATCH_SIZE": 64,
-	"MAX_FRAMES": 220,
-	"SAMPLE_RATE": 3,
+	"MAX_FRAMES": 30,
+	"SAMPLE_RATE": 1,
 	"MAX_TOKENS": 20,
 	"LANDMARKS_USED": [
 		"body",
@@ -13,15 +13,14 @@
 	"USE_3D": false,
 	"TRANSFORMS": [
 		"FilterLandmarks",
-		"RandomSampleFrames",
-		"PadTruncateFrames",
+		"InterpolateFrames",
 		"ReplaceNansWithZeros",
 		"FlattenKeypoints"
 	],
-	"D_MODEL": 8,
+	"D_MODEL": 16,
 	"DROPOUT": 0.2,
 	"NUM_ENCODER_LAYERS": 1,
 	"NUM_DECODER_LAYERS": 1,
 	"USE_CLASS_WEIGHTS": false,
-	"LR": 1e-3
+	"LR": 0.001
 }
