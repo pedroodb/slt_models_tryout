@@ -67,9 +67,7 @@ def load_hyperparameters_from_json(path: str) -> HyperParameters:
                 RandomSampleFrames(hp["SAMPLE_RATE"] if "SAMPLE_RATE" in hp else 1)
             )
         elif transform == "RandomSampleFrameLegacy":
-            transforms.append(
-                RandomSampleFrameLegacy(hp["MAX_FRAMES"])
-            )
+            transforms.append(RandomSampleFrameLegacy(hp["MAX_FRAMES"]))
         elif transform == "ReplaceNansWithZeros":
             transforms.append(ReplaceNansWithZeros())
         elif transform == "UseFramesDiffs":

@@ -307,6 +307,7 @@ class RandomSampleFrames(torch.nn.Module):
     def __str__(self):
         return "RandomSampleFrames"
 
+
 class RandomSampleFrameLegacy(torch.nn.Module):
     def __init__(self, max_len: int):
         """
