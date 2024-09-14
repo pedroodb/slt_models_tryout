@@ -62,6 +62,15 @@ class SLTDataset(Dataset):
             self.annotations = pd.read_csv(
                 os.path.join(data_dir, os.path.join(data_dir, "annotations.csv"))
             )
+
+            # filter samples above max_tokens by splitting output mode by whitespace
+            if max_tokens is not None:
+                self.annotations = self.annotations[
+                    self.annotations[self.output_mode].str.split().apply(len)
+                    <= max_tokens
+                ]
+                self.annotations.reset_index(drop=True, inplace=True)
+
             self.tokenizer.fit(
                 self.annotations[self.annotations["split"] == "train"][
                     self.output_mode

@@ -38,7 +38,7 @@ def plot_encoder_layers(
         if src_padding_mask is not None:
             attn_weights = attn_weights[:, ~src_padding_mask]
         sns.heatmap(
-            attn_weights.T,
+            attn_weights,
             ax=ax,
             square=True,
             cbar=False,
@@ -134,19 +134,23 @@ def plot_decoder_layers(
 def preprocess_attn_weights(
     attn_weights: list[Tensor],
     norm_func: Callable = lambda t: (t - t.min()) / (t.max() - t.min()),
+    take_last: bool = False,
 ):
     """
     Preprocess the attention weights for plotting, taking for each token the attention weights of the last call where the word is the target.
     Args:
         attn_weights (list[Tensor]): List of tensors of shape (B, N, L) where B is the batch size, N is the number of words and L is the number of words in the source sentence.
         norm_func (Callable): Function to normalize the attention weights.
+        take_last (bool): If True, take the attention weights of the last call for all tokens. If False, take the attention weights of the call where the word is the target.
     Returns:
         processed_attn_weights: Processed attention weights.
     """
     # take for each word the attention weights of the call where the word is the target
     processed_attn_weights = torch.zeros_like(attn_weights[-1])
     for i, attn_output_weights in enumerate(attn_weights):
-        processed_attn_weights[0, i, :] = norm_func(attn_output_weights[0, i, :])
+        processed_attn_weights[0, i, :] = norm_func(
+            attn_output_weights[0, (-1 if take_last else i), :]
+        )
     processed_attn_weights = processed_attn_weights.squeeze(0)
     return processed_attn_weights
 
