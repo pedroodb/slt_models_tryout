@@ -97,14 +97,28 @@ def plot_decoder_layers(
                 attn_weights,
                 ax=ax,
                 square=True,
-                cbar=mode == "self",
+                cbar=True,  # mode == "self",
                 vmin=0.0 if mode == "self" else None,
                 vmax=1.0 if mode == "self" else None,
             )
             ax.set_aspect("auto")
             ax.set_yticklabels(tgt_sent, rotation=0)
+
+            ax.set_ylabel("Predicted token", fontsize=12)
+            ax.set_xlabel("Percentage of the video", fontsize=12)
+
             if mode == "self":
                 ax.set_xticklabels(tgt_sent, rotation=90)
+            else:
+                # FIXME: This is a hack to make the x-axis labels show up correctly
+                max_value = attn_weights.shape[1]
+                percentages = ["0", "25", "50", "75", "100"]
+                num_partitions = len(percentages)
+                step = max_value / (num_partitions - 1)
+                partitions = [i * step for i in range(num_partitions)]
+                ax.set_xticks(partitions, ["0", "25", "50", "75", "100"])
+                ax.set_xlim(0, max_value)
+                ax.set_xticklabels(ax.get_xticklabels(), rotation=0)
             ax.set_title(f"Layer {layer + 1}") if token == 0 else None
     plt.subplots_adjust(wspace=0.4, hspace=0.4)
     if output_path:
@@ -186,7 +200,16 @@ def plot_decoder_attn_per_frame(
             df_attn_weights = pd.DataFrame(attn_weights.T.tolist())
             df_attn_weights.columns = tgt_sent
             ax = sns.lineplot(df_attn_weights, dashes=False, ax=ax)
-            ax.legend(loc='lower right', fontsize=8)
+            ax.legend(loc="lower right", fontsize=8)
+
+        # FIXME: This is a hack to make the x-axis labels show up correctly
+        max_value = attn_weights.shape[1]
+        percentages = ["0", "25", "50", "75", "100"]
+        num_partitions = len(percentages)
+        step = max_value / (num_partitions - 1)
+        partitions = [i * step for i in range(num_partitions)]
+        ax.set_xticks(partitions, ["0", "25", "50", "75", "100"])
+        ax.set_xlim(0, max_value)
 
     if output_path is not None:
         file_extension = "png" if transparent else "jpg"
