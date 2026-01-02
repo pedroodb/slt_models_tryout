@@ -63,6 +63,20 @@ class SLTDataset(Dataset):
                 os.path.join(data_dir, os.path.join(data_dir, "annotations.csv"))
             )
 
+            if self.split is not None:
+                assert (
+                    "split" in self.annotations.columns
+                ), "Split annotations not found"
+                self.annotations["split"] = self.annotations["split"].astype(str)
+            if self.output_mode == "text":
+                assert "text" in self.annotations.columns, "Text annotations not found"
+                self.annotations["text"] = self.annotations["text"].astype(str)
+            elif self.output_mode == "gloss":
+                assert (
+                    "gloss" in self.annotations.columns
+                ), "Gloss annotations not found"
+                self.annotations["gloss"] = self.annotations["gloss"].astype(str)
+
             # filter samples above max_tokens by splitting output mode by whitespace
             if max_tokens is not None:
                 self.annotations = self.annotations[
@@ -71,11 +85,15 @@ class SLTDataset(Dataset):
                 ]
                 self.annotations.reset_index(drop=True, inplace=True)
 
-            self.tokenizer.fit(
-                self.annotations[self.annotations["split"] == "train"][
+            # initialize tokenizer on train split if available, else on all data
+            target_data = (
+                self.annotations[self.output_mode].tolist()
+                if split is None
+                else self.annotations[self.annotations["split"] == "train"][
                     self.output_mode
                 ].tolist()
             )
+            self.tokenizer.fit(target_data)
             if split is not None:
                 self.annotations = self.annotations[self.annotations["split"] == split]
                 self.annotations.reset_index(drop=True, inplace=True)
@@ -85,12 +103,6 @@ class SLTDataset(Dataset):
         except FileNotFoundError:
             raise FileNotFoundError("Metadata or annotations not found")
 
-        if self.output_mode == "text":
-            assert "text" in self.annotations.columns, "Text annotations not found"
-            self.annotations["text"] = self.annotations["text"].astype(str)
-        elif self.output_mode == "gloss":
-            assert "gloss" in self.annotations.columns, "Gloss annotations not found"
-            self.annotations["gloss"] = self.annotations["gloss"].astype(str)
         self.token_ids: Tensor = self.tokenizer(
             self.annotations[output_mode].tolist(),
             padding=("max_length" if max_tokens is not None else "longest"),

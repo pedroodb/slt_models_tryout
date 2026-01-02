@@ -1,4 +1,6 @@
 datasets
+data
+lsa64
 lightning_logs
 wandb
 downloads

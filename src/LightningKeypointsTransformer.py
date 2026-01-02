@@ -4,7 +4,7 @@ from torch import Tensor
 from torch.optim import Adam
 from torch.nn.functional import cross_entropy
 from torchmetrics import Accuracy
-from torchmetrics.functional.text import bleu_score
+from torchmetrics.functional.text import bleu_score, wer
 import lightning as L
 
 from hyperparameters import HyperParameters
@@ -132,7 +132,7 @@ class LKeypointsTransformer(L.LightningModule):
 
     def on_test_epoch_end(self):
         translation_results = [
-            (y, trans_greedy, trans_beam)
+            (y, trans_greedy, trans_beam, wer.word_error_rate(trans_greedy, y).item())
             + tuple(bleu_score(trans_greedy, [y], n_gram=n).item() for n in range(1, 5))
             + tuple(bleu_score(trans_beam, [y], n_gram=n).item() for n in range(1, 5))
             for y, trans_greedy, trans_beam in zip(
@@ -148,6 +148,7 @@ class LKeypointsTransformer(L.LightningModule):
                 "y",
                 "trans_greedy",
                 "trans_beam",
+                "wer",
                 "bleu_1_greedy",
                 "bleu_2_greedy",
                 "bleu_3_greedy",
@@ -159,6 +160,7 @@ class LKeypointsTransformer(L.LightningModule):
             ],
         )
         self.logger.log_table(key="translation-results", columns=list(translation_results_df.columns), data=translation_results)  # type: ignore
+        self.log("wer", translation_results_df["wer"].mean())
         self.log("bleu_1_greedy", translation_results_df["bleu_1_greedy"].mean())
         self.log("bleu_2_greedy", translation_results_df["bleu_2_greedy"].mean())
         self.log("bleu_3_greedy", translation_results_df["bleu_3_greedy"].mean())
