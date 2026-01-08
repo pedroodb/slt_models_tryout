@@ -16,3 +16,7 @@ dataset_formatting
 # Checkpoints
 rwth/qi9048kn/checkpoints/
 *.ckpt
+
+# Checkpoints
+rwth/qi9048kn/checkpoints/
+*.ckpt
