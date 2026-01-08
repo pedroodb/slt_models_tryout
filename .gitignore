@@ -13,3 +13,6 @@ results/
 *.mp4
 .temp
 dataset_formatting
+# Checkpoints
+rwth/qi9048kn/checkpoints/
+*.ckpt
